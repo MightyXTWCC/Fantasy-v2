@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { usePlayersData } from '@/hooks/usePlayersData';
 import { useUserData } from '@/hooks/useUserData';
 import { useAuth } from '@/hooks/useAuth';
+import toast, { Toaster } from 'react-hot-toast';
 
 export function PlayersList() {
   const { players, loading, refetch } = usePlayersData();
@@ -25,14 +26,26 @@ export function PlayersList() {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        toast.success(result.message, {
+          duration: 4000,
+          position: 'top-center',
+        });
         refetch();
         refetchUser();
       } else {
         const error = await response.json();
-        alert(error.error);
+        toast.error(error.error, {
+          duration: 4000,
+          position: 'top-center',
+        });
       }
     } catch (error) {
       console.error('Error buying player:', error);
+      toast.error('Failed to buy player', {
+        duration: 4000,
+        position: 'top-center',
+      });
     }
   };
 
@@ -42,6 +55,7 @@ export function PlayersList() {
 
   return (
     <div>
+      <Toaster />
       <div className="mb-4 p-4 bg-muted rounded-lg">
         <p className="text-lg font-semibold">
           Budget: ${user?.budget?.toLocaleString() || 0}

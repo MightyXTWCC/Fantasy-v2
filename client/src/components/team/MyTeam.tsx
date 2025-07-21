@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTeamData } from '@/hooks/useTeamData';
 import { useUserData } from '@/hooks/useUserData';
 import { useAuth } from '@/hooks/useAuth';
+import toast, { Toaster } from 'react-hot-toast';
 
 export function MyTeam() {
   const { team, loading, refetch } = useTeamData();
@@ -25,11 +26,26 @@ export function MyTeam() {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        toast.success(result.message, {
+          duration: 4000,
+          position: 'top-center',
+        });
         refetch();
         refetchUser();
+      } else {
+        const error = await response.json();
+        toast.error(error.error, {
+          duration: 4000,
+          position: 'top-center',
+        });
       }
     } catch (error) {
       console.error('Error selling player:', error);
+      toast.error('Failed to sell player', {
+        duration: 4000,
+        position: 'top-center',
+      });
     }
   };
 
@@ -47,10 +63,24 @@ export function MyTeam() {
       });
       
       if (response.ok) {
+        toast.success('Captain set successfully!', {
+          duration: 3000,
+          position: 'top-center',
+        });
         refetch();
+      } else {
+        const error = await response.json();
+        toast.error(error.error, {
+          duration: 4000,
+          position: 'top-center',
+        });
       }
     } catch (error) {
       console.error('Error setting captain:', error);
+      toast.error('Failed to set captain', {
+        duration: 4000,
+        position: 'top-center',
+      });
     }
   };
 
@@ -67,6 +97,7 @@ export function MyTeam() {
 
   return (
     <div>
+      <Toaster />
       <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">

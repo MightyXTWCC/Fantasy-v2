@@ -50,12 +50,12 @@ function AppContent() {
                 </Link>
                 {user.is_admin && (
                   <Link to="/admin">
-                    <Button variant="ghost">Admin</Button>
+                    <Button variant="ghost">Admin Panel</Button>
                   </Link>
                 )}
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-muted-foreground">
-                    {user.username}
+                    {user.username}{user.is_admin && ' (Admin)'}
                   </span>
                   <Button variant="outline" size="sm" onClick={logout}>
                     Logout

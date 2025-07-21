@@ -385,7 +385,14 @@ app.post('/api/buy-player', authenticateUser, async (req, res) => {
       .execute();
     
     console.log('Player purchased successfully');
-    res.json({ success: true });
+    res.json({ 
+      success: true, 
+      message: `Successfully purchased ${player.name} for $${player.current_price.toLocaleString()}!`,
+      player: {
+        name: player.name,
+        price: player.current_price
+      }
+    });
   } catch (error) {
     console.error('Error buying player:', error);
     res.status(500).json({ error: 'Failed to buy player' });
@@ -435,7 +442,10 @@ app.post('/api/sell-player', authenticateUser, async (req, res) => {
       .execute();
     
     console.log('Player sold successfully');
-    res.json({ success: true });
+    res.json({ 
+      success: true,
+      message: `Successfully sold ${player.name} for $${player.current_price.toLocaleString()}!`
+    });
   } catch (error) {
     console.error('Error selling player:', error);
     res.status(500).json({ error: 'Failed to sell player' });
@@ -528,7 +538,7 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// H2H Matchup routes
+// H2H Matchup routes - ADMIN ONLY
 app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -565,25 +575,35 @@ app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
   }
 });
 
-app.post('/api/h2h-matchups', authenticateUser, async (req, res) => {
+// Create H2H matchup - ADMIN ONLY
+app.post('/api/h2h-matchups', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const { name, opponentUsername, matchId } = req.body;
-    const userId = req.user.id;
-    console.log('Creating H2H matchup:', { name, opponentUsername, matchId });
+    const { name, user1Username, user2Username, matchId } = req.body;
+    console.log('Admin creating H2H matchup:', { name, user1Username, user2Username, matchId });
     
-    // Find opponent
-    const opponent = await db.selectFrom('users')
+    // Find both users
+    const user1 = await db.selectFrom('users')
       .selectAll()
-      .where('username', '=', opponentUsername)
+      .where('username', '=', user1Username)
+      .executeTakeFirst();
+      
+    const user2 = await db.selectFrom('users')
+      .selectAll()
+      .where('username', '=', user2Username)
       .executeTakeFirst();
     
-    if (!opponent) {
-      res.status(404).json({ error: 'Opponent not found' });
+    if (!user1) {
+      res.status(404).json({ error: 'User 1 not found' });
       return;
     }
     
-    if (opponent.id === userId) {
-      res.status(400).json({ error: 'Cannot create matchup with yourself' });
+    if (!user2) {
+      res.status(404).json({ error: 'User 2 not found' });
+      return;
+    }
+    
+    if (user1.id === user2.id) {
+      res.status(400).json({ error: 'Cannot create matchup between same user' });
       return;
     }
     
@@ -601,8 +621,8 @@ app.post('/api/h2h-matchups', authenticateUser, async (req, res) => {
     const matchup = await db.insertInto('h2h_matchups')
       .values({
         name,
-        user1_id: userId,
-        user2_id: opponent.id,
+        user1_id: user1.id,
+        user2_id: user2.id,
         match_id: matchId,
         status: 'pending'
       })
@@ -695,7 +715,100 @@ async function calculateUserScoreForMatch(userId: number, matchId: number): Prom
   }
 }
 
-// Get all users (admin only - for creating matchups)
+// Get all users and teams (admin only)
+app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    console.log('Admin fetching all users and teams');
+    
+    // Get all users with their team info
+    const usersWithTeams = await db.selectFrom('users')
+      .leftJoin('user_teams', 'users.id', 'user_teams.user_id')
+      .leftJoin('players', 'user_teams.player_id', 'players.id')
+      .select([
+        'users.id',
+        'users.username',
+        'users.email',
+        'users.budget',
+        'users.is_admin',
+        'users.created_at',
+        'players.name as player_name',
+        'players.position as player_position',
+        'players.total_points as player_points',
+        'user_teams.is_captain',
+        'user_teams.purchase_price'
+      ])
+      .execute();
+    
+    // Group by user
+    const usersMap = new Map();
+    
+    usersWithTeams.forEach(row => {
+      if (!usersMap.has(row.id)) {
+        usersMap.set(row.id, {
+          id: row.id,
+          username: row.username,
+          email: row.email,
+          budget: row.budget,
+          is_admin: row.is_admin,
+          created_at: row.created_at,
+          team: []
+        });
+      }
+      
+      if (row.player_name) {
+        usersMap.get(row.id).team.push({
+          name: row.player_name,
+          position: row.player_position,
+          points: row.player_points,
+          is_captain: row.is_captain,
+          purchase_price: row.purchase_price
+        });
+      }
+    });
+    
+    const users = Array.from(usersMap.values());
+    
+    console.log(`Found ${users.length} users`);
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get all H2H matchups (admin only)
+app.get('/api/admin/h2h-matchups', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    console.log('Admin fetching all H2H matchups');
+    
+    const matchups = await db.selectFrom('h2h_matchups')
+      .leftJoin('users as user1', 'h2h_matchups.user1_id', 'user1.id')
+      .leftJoin('users as user2', 'h2h_matchups.user2_id', 'user2.id')
+      .leftJoin('matches', 'h2h_matchups.match_id', 'matches.id')
+      .leftJoin('users as winner', 'h2h_matchups.winner_id', 'winner.id')
+      .select([
+        'h2h_matchups.id',
+        'h2h_matchups.name',
+        'h2h_matchups.status',
+        'h2h_matchups.user1_score',
+        'h2h_matchups.user2_score',
+        'h2h_matchups.created_at',
+        'user1.username as user1_name',
+        'user2.username as user2_name',
+        'matches.match_name',
+        'matches.date as match_date',
+        'winner.username as winner_name'
+      ])
+      .execute();
+    
+    res.json(matchups);
+  } catch (error) {
+    console.error('Error fetching H2H matchups:', error);
+    res.status(500).json({ error: 'Failed to fetch H2H matchups' });
+  }
+});
+
+// Get simple list of users for dropdowns (admin only)
 app.get('/api/users', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const users = await db.selectFrom('users')
