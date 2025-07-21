@@ -6,10 +6,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePlayersData } from '@/hooks/usePlayersData';
 import { useMatchesData } from '@/hooks/useMatchesData';
+import { useAuth } from '@/hooks/useAuth';
 
 export function AddStats() {
   const { players } = usePlayersData();
   const { matches } = useMatchesData();
+  const { token } = useAuth();
   
   const [formData, setFormData] = React.useState({
     player_id: '',
@@ -29,10 +31,15 @@ export function AddStats() {
   const handleSubmit = async function(e: React.FormEvent) {
     e.preventDefault();
     
+    if (!token) return;
+    
     try {
       const response = await fetch('/api/player-stats', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           ...formData,
           player_id: parseInt(formData.player_id),

@@ -4,16 +4,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { usePlayersData } from '@/hooks/usePlayersData';
 import { useUserData } from '@/hooks/useUserData';
+import { useAuth } from '@/hooks/useAuth';
 
 export function PlayersList() {
   const { players, loading, refetch } = usePlayersData();
-  const { user, refetchUser } = useUserData(1); // Using user ID 1 for demo
+  const { user, refetchUser } = useUserData();
+  const { token } = useAuth();
 
   const handleBuyPlayer = async function(playerId: number) {
+    if (!token) return;
+
     try {
-      const response = await fetch(`/api/user/1/buy-player`, {
+      const response = await fetch('/api/buy-player', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ playerId })
       });
       

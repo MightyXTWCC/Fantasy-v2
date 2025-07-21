@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { setupStaticServing } from './static-serve.js';
 import { db } from './database.js';
+import { hashPassword, verifyPassword, generateToken, authenticateUser, requireAdmin } from './auth.js';
 
 dotenv.config();
 
@@ -38,7 +39,125 @@ function calculatePoints(stats: any): number {
   return Math.max(0, points); // Ensure points don't go negative
 }
 
-// Get all players
+// Auth routes
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    console.log('Registration attempt:', { username, email });
+
+    if (!username || !email || !password) {
+      res.status(400).json({ error: 'Username, email, and password are required' });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    // Check if user already exists
+    const existingUser = await db.selectFrom('users')
+      .selectAll()
+      .where((eb) => eb.or([
+        eb('username', '=', username),
+        eb('email', '=', email)
+      ]))
+      .executeTakeFirst();
+
+    if (existingUser) {
+      res.status(400).json({ error: 'Username or email already exists' });
+      return;
+    }
+
+    // Create user
+    const passwordHash = await hashPassword(password);
+    const user = await db.insertInto('users')
+      .values({
+        username,
+        email,
+        password_hash: passwordHash,
+        is_admin: 0,
+        budget: 1000000
+      })
+      .returningAll()
+      .executeTakeFirst();
+
+    const token = generateToken(user.id);
+    console.log('User registered successfully:', user.username);
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        is_admin: user.is_admin,
+        budget: user.budget
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    console.log('Login attempt:', username);
+
+    if (!username || !password) {
+      res.status(400).json({ error: 'Username and password are required' });
+      return;
+    }
+
+    // Find user
+    const user = await db.selectFrom('users')
+      .selectAll()
+      .where('username', '=', username)
+      .executeTakeFirst();
+
+    if (!user || !await verifyPassword(password, user.password_hash)) {
+      res.status(401).json({ error: 'Invalid username or password' });
+      return;
+    }
+
+    const token = generateToken(user.id);
+    console.log('User logged in successfully:', user.username);
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        is_admin: user.is_admin,
+        budget: user.budget
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Get current user
+app.get('/api/me', authenticateUser, async (req, res) => {
+  try {
+    res.json({
+      id: req.user.id,
+      username: req.user.username,
+      email: req.user.email,
+      is_admin: req.user.is_admin,
+      budget: req.user.budget
+    });
+  } catch (error) {
+    console.error('Get current user error:', error);
+    res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+// Get all players (public)
 app.get('/api/players', async (req, res) => {
   try {
     console.log('Fetching all players');
@@ -52,7 +171,7 @@ app.get('/api/players', async (req, res) => {
 });
 
 // Create a new player (admin only)
-app.post('/api/players', async (req, res) => {
+app.post('/api/players', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const { name, team, position, base_price } = req.body;
     console.log('Creating player:', { name, team, position, base_price });
@@ -76,7 +195,7 @@ app.post('/api/players', async (req, res) => {
   }
 });
 
-// Get all matches
+// Get all matches (public)
 app.get('/api/matches', async (req, res) => {
   try {
     console.log('Fetching all matches');
@@ -90,7 +209,7 @@ app.get('/api/matches', async (req, res) => {
 });
 
 // Create a new match (admin only)
-app.post('/api/matches', async (req, res) => {
+app.post('/api/matches', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const { match_name, date, team1, team2 } = req.body;
     console.log('Creating match:', { match_name, date, team1, team2 });
@@ -114,7 +233,7 @@ app.post('/api/matches', async (req, res) => {
 });
 
 // Add player stats (admin only)
-app.post('/api/player-stats', async (req, res) => {
+app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const stats = req.body;
     console.log('Adding player stats:', stats);
@@ -151,6 +270,9 @@ app.post('/api/player-stats', async (req, res) => {
       })
       .where('id', '=', stats.player_id)
       .execute();
+
+    // Update H2H matchup scores
+    await updateH2HScores(stats.match_id);
     
     console.log('Added player stats and updated player:', playerStats);
     res.json(playerStats);
@@ -181,9 +303,9 @@ app.get('/api/players/:id/stats', async (req, res) => {
 });
 
 // Get user team
-app.get('/api/user/:userId/team', async (req, res) => {
+app.get('/api/my-team', authenticateUser, async (req, res) => {
   try {
-    const userId = parseInt(req.params.userId);
+    const userId = req.user.id;
     console.log('Fetching team for user:', userId);
     
     const team = await db.selectFrom('user_teams')
@@ -201,9 +323,9 @@ app.get('/api/user/:userId/team', async (req, res) => {
 });
 
 // Buy player
-app.post('/api/user/:userId/buy-player', async (req, res) => {
+app.post('/api/buy-player', authenticateUser, async (req, res) => {
   try {
-    const userId = parseInt(req.params.userId);
+    const userId = req.user.id;
     const { playerId } = req.body;
     console.log('User', userId, 'buying player', playerId);
     
@@ -218,23 +340,30 @@ app.post('/api/user/:userId/buy-player', async (req, res) => {
       return;
     }
     
+    // Check if user already owns this player
+    const existingOwnership = await db.selectFrom('user_teams')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .where('player_id', '=', playerId)
+      .executeTakeFirst();
+    
+    if (existingOwnership) {
+      res.status(400).json({ error: 'You already own this player' });
+      return;
+    }
+    
     // Get player and user info
     const player = await db.selectFrom('players')
       .selectAll()
       .where('id', '=', playerId)
       .executeTakeFirst();
     
-    const user = await db.selectFrom('users')
-      .selectAll()
-      .where('id', '=', userId)
-      .executeTakeFirst();
-    
-    if (!player || !user) {
-      res.status(404).json({ error: 'Player or user not found' });
+    if (!player) {
+      res.status(404).json({ error: 'Player not found' });
       return;
     }
     
-    if (user.budget < player.current_price) {
+    if (req.user.budget < player.current_price) {
       res.status(400).json({ error: 'Insufficient budget' });
       return;
     }
@@ -251,7 +380,7 @@ app.post('/api/user/:userId/buy-player', async (req, res) => {
     
     // Update user budget
     await db.updateTable('users')
-      .set({ budget: user.budget - player.current_price })
+      .set({ budget: req.user.budget - player.current_price })
       .where('id', '=', userId)
       .execute();
     
@@ -264,9 +393,9 @@ app.post('/api/user/:userId/buy-player', async (req, res) => {
 });
 
 // Sell player
-app.post('/api/user/:userId/sell-player', async (req, res) => {
+app.post('/api/sell-player', authenticateUser, async (req, res) => {
   try {
-    const userId = parseInt(req.params.userId);
+    const userId = req.user.id;
     const { playerId } = req.body;
     console.log('User', userId, 'selling player', playerId);
     
@@ -276,13 +405,20 @@ app.post('/api/user/:userId/sell-player', async (req, res) => {
       .where('id', '=', playerId)
       .executeTakeFirst();
     
-    const user = await db.selectFrom('users')
+    if (!player) {
+      res.status(404).json({ error: 'Player not found' });
+      return;
+    }
+    
+    // Check if user owns this player
+    const ownership = await db.selectFrom('user_teams')
       .selectAll()
-      .where('id', '=', userId)
+      .where('user_id', '=', userId)
+      .where('player_id', '=', playerId)
       .executeTakeFirst();
     
-    if (!player || !user) {
-      res.status(404).json({ error: 'Player or user not found' });
+    if (!ownership) {
+      res.status(400).json({ error: 'You do not own this player' });
       return;
     }
     
@@ -294,7 +430,7 @@ app.post('/api/user/:userId/sell-player', async (req, res) => {
     
     // Update user budget (sell at current market price)
     await db.updateTable('users')
-      .set({ budget: user.budget + player.current_price })
+      .set({ budget: req.user.budget + player.current_price })
       .where('id', '=', userId)
       .execute();
     
@@ -307,11 +443,23 @@ app.post('/api/user/:userId/sell-player', async (req, res) => {
 });
 
 // Set captain
-app.post('/api/user/:userId/set-captain', async (req, res) => {
+app.post('/api/set-captain', authenticateUser, async (req, res) => {
   try {
-    const userId = parseInt(req.params.userId);
+    const userId = req.user.id;
     const { playerId } = req.body;
     console.log('User', userId, 'setting captain to player', playerId);
+    
+    // Check if user owns this player
+    const ownership = await db.selectFrom('user_teams')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .where('player_id', '=', playerId)
+      .executeTakeFirst();
+    
+    if (!ownership) {
+      res.status(400).json({ error: 'You do not own this player' });
+      return;
+    }
     
     // Remove captain status from all players
     await db.updateTable('user_teams')
@@ -334,7 +482,7 @@ app.post('/api/user/:userId/set-captain', async (req, res) => {
   }
 });
 
-// Get leaderboard
+// Get leaderboard (public)
 app.get('/api/leaderboard', async (req, res) => {
   try {
     console.log('Fetching leaderboard');
@@ -380,27 +528,184 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// Get user info
-app.get('/api/user/:userId', async (req, res) => {
+// H2H Matchup routes
+app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
   try {
-    const userId = parseInt(req.params.userId);
-    console.log('Fetching user info:', userId);
+    const userId = req.user.id;
+    console.log('Fetching H2H matchups for user:', userId);
     
-    const user = await db.selectFrom('users')
+    const matchups = await db.selectFrom('h2h_matchups')
+      .leftJoin('users as user1', 'h2h_matchups.user1_id', 'user1.id')
+      .leftJoin('users as user2', 'h2h_matchups.user2_id', 'user2.id')
+      .leftJoin('matches', 'h2h_matchups.match_id', 'matches.id')
+      .leftJoin('users as winner', 'h2h_matchups.winner_id', 'winner.id')
+      .select([
+        'h2h_matchups.id',
+        'h2h_matchups.name',
+        'h2h_matchups.status',
+        'h2h_matchups.user1_score',
+        'h2h_matchups.user2_score',
+        'h2h_matchups.created_at',
+        'user1.username as user1_name',
+        'user2.username as user2_name',
+        'matches.match_name',
+        'matches.date as match_date',
+        'winner.username as winner_name'
+      ])
+      .where((eb) => eb.or([
+        eb('h2h_matchups.user1_id', '=', userId),
+        eb('h2h_matchups.user2_id', '=', userId)
+      ]))
+      .execute();
+    
+    res.json(matchups);
+  } catch (error) {
+    console.error('Error fetching H2H matchups:', error);
+    res.status(500).json({ error: 'Failed to fetch H2H matchups' });
+  }
+});
+
+app.post('/api/h2h-matchups', authenticateUser, async (req, res) => {
+  try {
+    const { name, opponentUsername, matchId } = req.body;
+    const userId = req.user.id;
+    console.log('Creating H2H matchup:', { name, opponentUsername, matchId });
+    
+    // Find opponent
+    const opponent = await db.selectFrom('users')
       .selectAll()
-      .where('id', '=', userId)
+      .where('username', '=', opponentUsername)
       .executeTakeFirst();
     
-    if (!user) {
-      res.status(404).json({ error: 'User not found' });
+    if (!opponent) {
+      res.status(404).json({ error: 'Opponent not found' });
       return;
     }
     
-    console.log('Found user:', user);
-    res.json(user);
+    if (opponent.id === userId) {
+      res.status(400).json({ error: 'Cannot create matchup with yourself' });
+      return;
+    }
+    
+    // Check if match exists
+    const match = await db.selectFrom('matches')
+      .selectAll()
+      .where('id', '=', matchId)
+      .executeTakeFirst();
+    
+    if (!match) {
+      res.status(404).json({ error: 'Match not found' });
+      return;
+    }
+    
+    const matchup = await db.insertInto('h2h_matchups')
+      .values({
+        name,
+        user1_id: userId,
+        user2_id: opponent.id,
+        match_id: matchId,
+        status: 'pending'
+      })
+      .returningAll()
+      .executeTakeFirst();
+    
+    console.log('Created H2H matchup:', matchup);
+    res.json(matchup);
   } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
+    console.error('Error creating H2H matchup:', error);
+    res.status(500).json({ error: 'Failed to create H2H matchup' });
+  }
+});
+
+// Function to update H2H scores when stats are added
+async function updateH2HScores(matchId: number) {
+  try {
+    console.log('Updating H2H scores for match:', matchId);
+    
+    // Get all active matchups for this match
+    const matchups = await db.selectFrom('h2h_matchups')
+      .selectAll()
+      .where('match_id', '=', matchId)
+      .where('status', '=', 'pending')
+      .execute();
+    
+    for (const matchup of matchups) {
+      // Calculate scores for both users
+      const user1Score = await calculateUserScoreForMatch(matchup.user1_id, matchId);
+      const user2Score = await calculateUserScoreForMatch(matchup.user2_id, matchId);
+      
+      let winner_id = null;
+      let status = 'pending';
+      
+      // Check if match has stats (meaning it's completed)
+      const hasStats = await db.selectFrom('player_stats')
+        .selectAll()
+        .where('match_id', '=', matchId)
+        .executeTakeFirst();
+      
+      if (hasStats) {
+        status = 'completed';
+        if (user1Score > user2Score) {
+          winner_id = matchup.user1_id;
+        } else if (user2Score > user1Score) {
+          winner_id = matchup.user2_id;
+        }
+      }
+      
+      // Update matchup
+      await db.updateTable('h2h_matchups')
+        .set({
+          user1_score: user1Score,
+          user2_score: user2Score,
+          winner_id,
+          status
+        })
+        .where('id', '=', matchup.id)
+        .execute();
+    }
+  } catch (error) {
+    console.error('Error updating H2H scores:', error);
+  }
+}
+
+async function calculateUserScoreForMatch(userId: number, matchId: number): Promise<number> {
+  try {
+    const userTeam = await db.selectFrom('user_teams')
+      .leftJoin('player_stats', (join) => join
+        .onRef('user_teams.player_id', '=', 'player_stats.player_id')
+        .on('player_stats.match_id', '=', matchId)
+      )
+      .select([
+        'user_teams.is_captain',
+        'player_stats.points'
+      ])
+      .where('user_teams.user_id', '=', userId)
+      .execute();
+    
+    return userTeam.reduce((total, player) => {
+      let points = player.points || 0;
+      if (player.is_captain) {
+        points *= 2; // Double points for captain
+      }
+      return total + points;
+    }, 0);
+  } catch (error) {
+    console.error('Error calculating user score:', error);
+    return 0;
+  }
+}
+
+// Get all users (admin only - for creating matchups)
+app.get('/api/users', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const users = await db.selectFrom('users')
+      .select(['id', 'username', 'email', 'is_admin'])
+      .execute();
+    
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 

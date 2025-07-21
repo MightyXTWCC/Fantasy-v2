@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/hooks/useAuth';
 
 export function CreateMatch() {
+  const { token } = useAuth();
   const [formData, setFormData] = React.useState({
     match_name: '',
     date: '',
@@ -15,10 +17,15 @@ export function CreateMatch() {
   const handleSubmit = async function(e: React.FormEvent) {
     e.preventDefault();
     
+    if (!token) return;
+    
     try {
       const response = await fetch('/api/matches', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(formData)
       });
       

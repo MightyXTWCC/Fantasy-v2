@@ -1,24 +1,14 @@
 import * as React from 'react';
+import { useAuth } from '@/hooks/useAuth';
 
-export function useUserData(userId: number) {
-  const [user, setUser] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
+export function useUserData() {
+  const { user } = useAuth();
+  const [loading, setLoading] = React.useState(false);
 
-  const fetchUser = async function() {
-    try {
-      const response = await fetch(`/api/user/${userId}`);
-      const data = await response.json();
-      setUser(data);
-    } catch (error) {
-      console.error('Error fetching user:', error);
-    } finally {
-      setLoading(false);
-    }
+  const refetchUser = async function() {
+    // User data is managed by the auth context
+    return;
   };
 
-  React.useEffect(() => {
-    fetchUser();
-  }, [userId]);
-
-  return { user, loading, refetchUser: fetchUser };
+  return { user, loading, refetchUser };
 }

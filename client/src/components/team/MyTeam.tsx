@@ -4,16 +4,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTeamData } from '@/hooks/useTeamData';
 import { useUserData } from '@/hooks/useUserData';
+import { useAuth } from '@/hooks/useAuth';
 
 export function MyTeam() {
-  const { team, loading, refetch } = useTeamData(1); // Using user ID 1 for demo
-  const { user, refetchUser } = useUserData(1);
+  const { team, loading, refetch } = useTeamData();
+  const { user, refetchUser } = useUserData();
+  const { token } = useAuth();
 
   const handleSellPlayer = async function(playerId: number) {
+    if (!token) return;
+
     try {
-      const response = await fetch(`/api/user/1/sell-player`, {
+      const response = await fetch('/api/sell-player', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ playerId })
       });
       
@@ -27,10 +34,15 @@ export function MyTeam() {
   };
 
   const handleSetCaptain = async function(playerId: number) {
+    if (!token) return;
+
     try {
-      const response = await fetch(`/api/user/1/set-captain`, {
+      const response = await fetch('/api/set-captain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ playerId })
       });
       

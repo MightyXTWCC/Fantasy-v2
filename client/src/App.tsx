@@ -1,13 +1,30 @@
 import * as React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { AuthPage } from '@/components/auth/AuthPage';
 import { PlayersPage } from '@/pages/PlayersPage';
 import { MatchesPage } from '@/pages/MatchesPage';
 import { MyTeamPage } from '@/pages/MyTeamPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { LeaderboardPage } from '@/pages/LeaderboardPage';
+import { H2HPage } from '@/pages/H2HPage';
 
-function App() {
+function AppContent() {
+  const { user, logout, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
   return (
     <Router>
       <div className="min-h-screen bg-background">
@@ -15,7 +32,7 @@ function App() {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold">Fantasy Cricket</h1>
-              <div className="flex space-x-4">
+              <div className="flex items-center space-x-4">
                 <Link to="/">
                   <Button variant="ghost">Players</Button>
                 </Link>
@@ -25,12 +42,25 @@ function App() {
                 <Link to="/my-team">
                   <Button variant="ghost">My Team</Button>
                 </Link>
+                <Link to="/h2h">
+                  <Button variant="ghost">Head-to-Head</Button>
+                </Link>
                 <Link to="/leaderboard">
                   <Button variant="ghost">Leaderboard</Button>
                 </Link>
-                <Link to="/admin">
-                  <Button variant="ghost">Admin</Button>
-                </Link>
+                {user.is_admin && (
+                  <Link to="/admin">
+                    <Button variant="ghost">Admin</Button>
+                  </Link>
+                )}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-muted-foreground">
+                    {user.username}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={logout}>
+                    Logout
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -41,12 +71,23 @@ function App() {
             <Route path="/" element={<PlayersPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/my-team" element={<MyTeamPage />} />
+            <Route path="/h2h" element={<H2HPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/admin" element={<AdminPage />} />
+            {user.is_admin && (
+              <Route path="/admin" element={<AdminPage />} />
+            )}
           </Routes>
         </main>
       </div>
     </Router>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

@@ -9,6 +9,14 @@ export interface DatabaseSchema {
     email: string;
     is_admin: number;
     budget: number;
+    password_hash: string;
+    created_at: string;
+  };
+  user_sessions: {
+    id: number;
+    user_id: number;
+    session_token: string;
+    expires_at: string;
     created_at: string;
   };
   players: {
@@ -54,6 +62,18 @@ export interface DatabaseSchema {
     purchase_price: number;
     purchase_date: string;
     is_captain: number;
+  };
+  h2h_matchups: {
+    id: number;
+    name: string;
+    user1_id: number;
+    user2_id: number;
+    match_id: number;
+    status: string;
+    user1_score: number;
+    user2_score: number;
+    winner_id: number;
+    created_at: string;
   };
 }
 

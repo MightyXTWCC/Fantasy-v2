@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useAuth } from '@/hooks/useAuth';
 
 export function usePlayersData() {
   const [players, setPlayers] = React.useState([]);

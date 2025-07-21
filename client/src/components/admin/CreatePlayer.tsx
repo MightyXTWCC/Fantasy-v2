@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/hooks/useAuth';
 
 export function CreatePlayer() {
+  const { token } = useAuth();
   const [formData, setFormData] = React.useState({
     name: '',
     team: '',
@@ -16,10 +18,15 @@ export function CreatePlayer() {
   const handleSubmit = async function(e: React.FormEvent) {
     e.preventDefault();
     
+    if (!token) return;
+    
     try {
       const response = await fetch('/api/players', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(formData)
       });
       
