@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PositionIcon } from '@/components/ui/position-icon';
 import { useAuth } from '@/hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -33,7 +35,7 @@ export function PlayersList() {
     fetchPlayers();
   }, [searchQuery]);
 
-  const handleBuyPlayer = async function(playerId: number) {
+  const handleBuyPlayer = async function(playerId: number, isSubstitute = false) {
     if (!token) return;
 
     try {
@@ -43,7 +45,7 @@ export function PlayersList() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ playerId })
+        body: JSON.stringify({ playerId, isSubstitute })
       });
       
       if (response.ok) {
@@ -74,6 +76,54 @@ export function PlayersList() {
     return <div>Loading players...</div>;
   }
 
+  // Group players by position for better organization
+  const playersByPosition = {
+    'Wicket-keeper': players.filter(p => p.position === 'Wicket-keeper'),
+    'Batsman': players.filter(p => p.position === 'Batsman'),
+    'All-rounder': players.filter(p => p.position === 'All-rounder'),
+    'Bowler': players.filter(p => p.position === 'Bowler')
+  };
+
+  const renderPlayerCard = function(player) {
+    return (
+      <Card key={player.id} className="hover:shadow-lg transition-shadow">
+        <CardHeader>
+          <CardTitle className="flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <PositionIcon position={player.position} className="w-5 h-5" />
+              <span className="text-sm">{player.name}</span>
+            </div>
+            <Badge variant="secondary">{player.position}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <p><strong>Price:</strong> ${player.current_price.toLocaleString()}</p>
+            <p><strong>Total Points:</strong> {player.total_points}</p>
+            <p><strong>Matches:</strong> {player.matches_played}</p>
+            <div className="space-y-2 mt-4">
+              <Button 
+                className="w-full"
+                onClick={() => handleBuyPlayer(player.id, false)}
+                disabled={!user || user.budget < player.current_price}
+              >
+                Buy as Main Player
+              </Button>
+              <Button 
+                variant="outline"
+                className="w-full"
+                onClick={() => handleBuyPlayer(player.id, true)}
+                disabled={!user || user.budget < player.current_price}
+              >
+                Buy as Substitute
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div>
       <Toaster />
@@ -92,34 +142,56 @@ export function PlayersList() {
             className="max-w-sm"
           />
         </div>
+
+        {/* Team Requirements Info */}
+        <Card>
+          <CardContent className="p-4">
+            <h3 className="font-semibold mb-2">Team Requirements:</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+              <div>2 Batsmen</div>
+              <div>2 Bowlers</div>
+              <div>1 All-rounder</div>
+              <div>1 Wicket-keeper</div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Plus 1 substitute for each position type (total 6 players)
+            </p>
+          </CardContent>
+        </Card>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {players.map((player) => (
-          <Card key={player.id}>
-            <CardHeader>
-              <CardTitle className="flex justify-between items-center">
-                <span>{player.name}</span>
-                <Badge variant="secondary">{player.position}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <p><strong>Price:</strong> ${player.current_price.toLocaleString()}</p>
-                <p><strong>Total Points:</strong> {player.total_points}</p>
-                <p><strong>Matches:</strong> {player.matches_played}</p>
-                <Button 
-                  className="w-full mt-4"
-                  onClick={() => handleBuyPlayer(player.id)}
-                  disabled={!user || user.budget < player.current_price}
-                >
-                  Buy Player
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="all">All Players</TabsTrigger>
+          <TabsTrigger value="Wicket-keeper">Keepers</TabsTrigger>
+          <TabsTrigger value="Batsman">Batsmen</TabsTrigger>
+          <TabsTrigger value="All-rounder">All-rounders</TabsTrigger>
+          <TabsTrigger value="Bowler">Bowlers</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="all">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {players.map(renderPlayerCard)}
+          </div>
+        </TabsContent>
+        
+        {Object.entries(playersByPosition).map(([position, positionPlayers]) => (
+          <TabsContent key={position} value={position}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {positionPlayers.map(renderPlayerCard)}
+            </div>
+            {positionPlayers.length === 0 && (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <p className="text-muted-foreground">
+                    No {position.toLowerCase()}s found matching your search.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
         ))}
-      </div>
+      </Tabs>
       
       {players.length === 0 && (
         <Card>

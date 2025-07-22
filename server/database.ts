@@ -61,6 +61,8 @@ export interface DatabaseSchema {
     purchase_price: number;
     purchase_date: string;
     is_captain: number;
+    is_substitute: number;
+    position_type: string;
   };
   h2h_matchups: {
     id: number;

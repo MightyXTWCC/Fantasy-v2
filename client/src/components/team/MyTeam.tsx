@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { useTeamData } from '@/hooks/useTeamData';
 import { useUserData } from '@/hooks/useUserData';
 import { useAuth } from '@/hooks/useAuth';
+import { CricketPitchView } from '@/components/team/CricketPitchView';
+import { SubstituteBench } from '@/components/team/SubstituteBench';
 import toast, { Toaster } from 'react-hot-toast';
 
 export function MyTeam() {
@@ -84,16 +86,72 @@ export function MyTeam() {
     }
   };
 
+  const handleSubstitute = async function(mainPlayerId: number, substitutePlayerId: number) {
+    if (!token) return;
+
+    try {
+      const response = await fetch('/api/substitute-player', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ mainPlayerId, substitutePlayerId })
+      });
+      
+      if (response.ok) {
+        toast.success('Player substituted successfully!', {
+          duration: 3000,
+          position: 'top-center',
+        });
+        refetch();
+      } else {
+        const error = await response.json();
+        toast.error(error.error, {
+          duration: 4000,
+          position: 'top-center',
+        });
+      }
+    } catch (error) {
+      console.error('Error substituting player:', error);
+      toast.error('Failed to substitute player', {
+        duration: 4000,
+        position: 'top-center',
+      });
+    }
+  };
+
   if (loading) {
     return <div>Loading team...</div>;
   }
 
+  // Separate main team and substitutes
+  const mainTeam = team.filter(player => !player.is_substitute);
+  const substitutes = team.filter(player => player.is_substitute);
+  
   const totalValue = team.reduce((sum, player) => sum + (player.current_price || 0), 0);
-  const totalPoints = team.reduce((sum, player) => {
+  const totalPoints = mainTeam.reduce((sum, player) => {
     let points = player.total_points || 0;
     if (player.is_captain) points *= 2;
     return sum + points;
   }, 0);
+
+  // Check team composition requirements
+  const positionCounts = {
+    'Batsman': 0,
+    'Bowler': 0,
+    'All-rounder': 0,
+    'Wicket-keeper': 0
+  };
+
+  mainTeam.forEach(player => {
+    positionCounts[player.position]++;
+  });
+
+  const isTeamComplete = positionCounts['Batsman'] === 2 && 
+                        positionCounts['Bowler'] === 2 && 
+                        positionCounts['All-rounder'] === 1 && 
+                        positionCounts['Wicket-keeper'] === 1;
 
   return (
     <div>
@@ -119,7 +177,7 @@ export function MyTeam() {
           <CardContent className="p-4">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Players</p>
-              <p className="text-2xl font-bold">{team.length}/5</p>
+              <p className="text-2xl font-bold">{team.length}/6</p>
             </div>
           </CardContent>
         </Card>
@@ -133,7 +191,47 @@ export function MyTeam() {
         </Card>
       </div>
 
-      {team.length === 0 ? (
+      {/* Team Composition Status */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Team Composition</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Batsmen</p>
+              <p className={`text-lg font-bold ${positionCounts['Batsman'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Batsman']}/2
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Bowlers</p>
+              <p className={`text-lg font-bold ${positionCounts['Bowler'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Bowler']}/2
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">All-rounder</p>
+              <p className={`text-lg font-bold ${positionCounts['All-rounder'] === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['All-rounder']}/1
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Keeper</p>
+              <p className={`text-lg font-bold ${positionCounts['Wicket-keeper'] === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Wicket-keeper']}/1
+              </p>
+            </div>
+          </div>
+          {isTeamComplete ? (
+            <Badge variant="default" className="w-full justify-center">Team Complete</Badge>
+          ) : (
+            <Badge variant="destructive" className="w-full justify-center">Incomplete Team</Badge>
+          )}
+        </CardContent>
+      </Card>
+
+      {mainTeam.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
             <p className="text-muted-foreground">No players in your team yet.</p>
@@ -141,48 +239,24 @@ export function MyTeam() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {team.map((player) => (
-            <Card key={player.id}>
-              <CardHeader>
-                <CardTitle className="flex justify-between items-center">
-                  <span>{player.name}</span>
-                  <div className="flex space-x-2">
-                    <Badge variant="secondary">{player.position}</Badge>
-                    {player.is_captain && (
-                      <Badge variant="default">Captain</Badge>
-                    )}
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <p><strong>Team:</strong> {player.team}</p>
-                  <p><strong>Bought for:</strong> ${player.purchase_price?.toLocaleString()}</p>
-                  <p><strong>Current Value:</strong> ${player.current_price?.toLocaleString()}</p>
-                  <p><strong>Points:</strong> {player.total_points} {player.is_captain && '(x2)'}</p>
-                  <div className="flex space-x-2 mt-4">
-                    <Button 
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => handleSetCaptain(player.player_id)}
-                      disabled={player.is_captain}
-                    >
-                      {player.is_captain ? 'Captain' : 'Make Captain'}
-                    </Button>
-                    <Button 
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={() => handleSellPlayer(player.player_id)}
-                    >
-                      Sell
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <>
+          {/* Cricket Pitch Visualization */}
+          <CricketPitchView 
+            team={mainTeam} 
+            onSetCaptain={handleSetCaptain}
+            onSellPlayer={handleSellPlayer}
+          />
+          
+          {/* Substitutes Bench */}
+          {substitutes.length > 0 && (
+            <SubstituteBench 
+              substitutes={substitutes}
+              mainTeam={mainTeam}
+              onSubstitute={handleSubstitute}
+              onSellPlayer={handleSellPlayer}
+            />
+          )}
+        </>
       )}
     </div>
   );

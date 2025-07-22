@@ -12,8 +12,8 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Calculate points based on stats
-function calculatePoints(stats: any): number {
+// Calculate points based on stats with position-based bonuses
+function calculatePoints(stats: any, playerPosition: string): number {
   let points = 0;
   
   // Batting points
@@ -25,10 +25,20 @@ function calculatePoints(stats: any): number {
   points += stats.wickets * 25; // 25 points per wicket
   points -= Math.floor(stats.runs_conceded / 2); // -0.5 points per run conceded
   
-  // Fielding points
-  points += stats.catches * 8; // 8 points per catch
-  points += stats.stumpings * 12; // 12 points per stumping
-  points += stats.run_outs * 6; // 6 points per run out
+  // Fielding points with position-based bonuses
+  const catches = stats.catches || 0;
+  const stumpings = stats.stumpings || 0;
+  const runOuts = stats.run_outs || 0;
+  
+  // Position-based fielding multipliers
+  let fieldingMultiplier = 1;
+  if (playerPosition === 'Wicket-keeper') {
+    fieldingMultiplier = 1.5; // 50% bonus for keepers
+  }
+  
+  points += Math.floor(catches * 8 * fieldingMultiplier); // Base 8 points per catch
+  points += Math.floor(stumpings * 12 * fieldingMultiplier); // Base 12 points per stumping (keepers only usually)
+  points += Math.floor(runOuts * 6 * fieldingMultiplier); // Base 6 points per run out
   
   // Bonus points
   if (stats.runs >= 50) points += 8; // Half century bonus
@@ -444,8 +454,14 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
     const stats = req.body;
     console.log('Adding player stats:', stats);
     
-    // Calculate points
-    const points = calculatePoints(stats);
+    // Get player position for bonus calculation
+    const player = await db.selectFrom('players')
+      .select(['position'])
+      .where('id', '=', stats.player_id)
+      .executeTakeFirst();
+    
+    // Calculate points with position-based bonuses
+    const points = calculatePoints(stats, player?.position || '');
     
     // Insert stats
     const playerStats = await db.insertInto('player_stats')
@@ -528,37 +544,34 @@ app.get('/api/my-team', authenticateUser, async (req, res) => {
   }
 });
 
-// Buy player
+// Buy player with position constraints
 app.post('/api/buy-player', authenticateUser, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { playerId } = req.body;
-    console.log('User', userId, 'buying player', playerId);
+    const { playerId, isSubstitute } = req.body;
+    console.log('User', userId, 'buying player', playerId, 'as substitute:', isSubstitute);
     
-    // Check if user already has 5 players
+    // Check current team composition
     const currentTeam = await db.selectFrom('user_teams')
+      .leftJoin('players', 'user_teams.player_id', 'players.id')
       .selectAll()
       .where('user_id', '=', userId)
       .execute();
     
-    if (currentTeam.length >= 5) {
-      res.status(400).json({ error: 'Team is full (maximum 5 players)' });
+    // Check if user already has 6 players total
+    if (currentTeam.length >= 6) {
+      res.status(400).json({ error: 'Team is full (maximum 6 players)' });
       return;
     }
     
     // Check if user already owns this player
-    const existingOwnership = await db.selectFrom('user_teams')
-      .selectAll()
-      .where('user_id', '=', userId)
-      .where('player_id', '=', playerId)
-      .executeTakeFirst();
-    
+    const existingOwnership = currentTeam.find(p => p.player_id === playerId);
     if (existingOwnership) {
       res.status(400).json({ error: 'You already own this player' });
       return;
     }
     
-    // Get player and user info
+    // Get player info
     const player = await db.selectFrom('players')
       .selectAll()
       .where('id', '=', playerId)
@@ -574,13 +587,47 @@ app.post('/api/buy-player', authenticateUser, async (req, res) => {
       return;
     }
     
+    // Position constraints check for main team (not substitutes)
+    if (!isSubstitute) {
+      const mainTeam = currentTeam.filter(p => !p.is_substitute);
+      const positionCounts = {
+        'Batsman': 0,
+        'Bowler': 0,
+        'All-rounder': 0,
+        'Wicket-keeper': 0
+      };
+      
+      mainTeam.forEach(p => {
+        positionCounts[p.position]++;
+      });
+      
+      // Check position limits for main team
+      if (player.position === 'Batsman' && positionCounts['Batsman'] >= 2) {
+        res.status(400).json({ error: 'Already have maximum batsmen (2)' });
+        return;
+      }
+      if (player.position === 'Bowler' && positionCounts['Bowler'] >= 2) {
+        res.status(400).json({ error: 'Already have maximum bowlers (2)' });
+        return;
+      }
+      if (player.position === 'All-rounder' && positionCounts['All-rounder'] >= 1) {
+        res.status(400).json({ error: 'Already have maximum all-rounders (1)' });
+        return;
+      }
+      if (player.position === 'Wicket-keeper' && positionCounts['Wicket-keeper'] >= 1) {
+        res.status(400).json({ error: 'Already have maximum wicket-keepers (1)' });
+        return;
+      }
+    }
+    
     // Add player to team
     await db.insertInto('user_teams')
       .values({
         user_id: userId,
         player_id: playerId,
         purchase_price: player.current_price,
-        is_captain: 0
+        is_captain: 0,
+        is_substitute: isSubstitute ? 1 : 0
       })
       .execute();
     
@@ -596,7 +643,8 @@ app.post('/api/buy-player', authenticateUser, async (req, res) => {
       message: `Successfully purchased ${player.name} for $${player.current_price.toLocaleString()}!`,
       player: {
         name: player.name,
-        price: player.current_price
+        price: player.current_price,
+        isSubstitute: isSubstitute
       }
     });
   } catch (error) {
@@ -665,7 +713,7 @@ app.post('/api/set-captain', authenticateUser, async (req, res) => {
     const { playerId } = req.body;
     console.log('User', userId, 'setting captain to player', playerId);
     
-    // Check if user owns this player
+    // Check if user owns this player and it's not a substitute
     const ownership = await db.selectFrom('user_teams')
       .selectAll()
       .where('user_id', '=', userId)
@@ -674,6 +722,11 @@ app.post('/api/set-captain', authenticateUser, async (req, res) => {
     
     if (!ownership) {
       res.status(400).json({ error: 'You do not own this player' });
+      return;
+    }
+    
+    if (ownership.is_substitute) {
+      res.status(400).json({ error: 'Cannot make a substitute the captain' });
       return;
     }
     
@@ -698,6 +751,61 @@ app.post('/api/set-captain', authenticateUser, async (req, res) => {
   }
 });
 
+// Substitute player (swap main player with substitute)
+app.post('/api/substitute-player', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { mainPlayerId, substitutePlayerId } = req.body;
+    console.log('User', userId, 'substituting player', mainPlayerId, 'with', substitutePlayerId);
+    
+    // Verify ownership and positions
+    const mainPlayer = await db.selectFrom('user_teams')
+      .leftJoin('players', 'user_teams.player_id', 'players.id')
+      .selectAll()
+      .where('user_teams.user_id', '=', userId)
+      .where('user_teams.player_id', '=', mainPlayerId)
+      .where('user_teams.is_substitute', '=', 0)
+      .executeTakeFirst();
+      
+    const subPlayer = await db.selectFrom('user_teams')
+      .leftJoin('players', 'user_teams.player_id', 'players.id')
+      .selectAll()
+      .where('user_teams.user_id', '=', userId)
+      .where('user_teams.player_id', '=', substitutePlayerId)
+      .where('user_teams.is_substitute', '=', 1)
+      .executeTakeFirst();
+    
+    if (!mainPlayer || !subPlayer) {
+      res.status(400).json({ error: 'Invalid player selection for substitution' });
+      return;
+    }
+    
+    if (mainPlayer.position !== subPlayer.position) {
+      res.status(400).json({ error: 'Can only substitute players of the same position' });
+      return;
+    }
+    
+    // Swap their substitute status
+    await db.updateTable('user_teams')
+      .set({ is_substitute: 1, is_captain: 0 })
+      .where('user_id', '=', userId)
+      .where('player_id', '=', mainPlayerId)
+      .execute();
+      
+    await db.updateTable('user_teams')
+      .set({ is_substitute: 0 })
+      .where('user_id', '=', userId)
+      .where('player_id', '=', substitutePlayerId)
+      .execute();
+    
+    console.log('Substitution successful');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error substituting player:', error);
+    res.status(500).json({ error: 'Failed to substitute player' });
+  }
+});
+
 // Get leaderboard (public)
 app.get('/api/leaderboard', async (req, res) => {
   try {
@@ -710,11 +818,12 @@ app.get('/api/leaderboard', async (req, res) => {
         'users.id as user_id',
         'users.username',
         'players.total_points',
-        'user_teams.is_captain'
+        'user_teams.is_captain',
+        'user_teams.is_substitute'
       ])
       .execute();
     
-    // Calculate team totals
+    // Calculate team totals (only main team players count)
     const teamTotals = teams.reduce((acc, team) => {
       if (!acc[team.user_id]) {
         acc[team.user_id] = {
@@ -724,12 +833,15 @@ app.get('/api/leaderboard', async (req, res) => {
         };
       }
       
-      let points = team.total_points || 0;
-      if (team.is_captain) {
-        points *= 2; // Double points for captain
+      // Only count points from main team players (not substitutes)
+      if (!team.is_substitute) {
+        let points = team.total_points || 0;
+        if (team.is_captain) {
+          points *= 2; // Double points for captain
+        }
+        
+        acc[team.user_id].total_points += points;
       }
-      
-      acc[team.user_id].total_points += points;
       return acc;
     }, {});
     
@@ -856,7 +968,7 @@ async function updateH2HScores(matchId: number) {
       .execute();
     
     for (const matchup of matchups) {
-      // Calculate scores for both users
+      // Calculate scores for both users (only main team players)
       const user1Score = await calculateUserScoreForMatch(matchup.user1_id, matchId);
       const user2Score = await calculateUserScoreForMatch(matchup.user2_id, matchId);
       
@@ -903,12 +1015,16 @@ async function calculateUserScoreForMatch(userId: number, matchId: number): Prom
       )
       .select([
         'user_teams.is_captain',
+        'user_teams.is_substitute',
         'player_stats.points'
       ])
       .where('user_teams.user_id', '=', userId)
       .execute();
     
     return userTeam.reduce((total, player) => {
+      // Only count points from main team players (not substitutes)
+      if (player.is_substitute) return total;
+      
       let points = player.points || 0;
       if (player.is_captain) {
         points *= 2; // Double points for captain
@@ -942,6 +1058,7 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
         'players.position as player_position',
         'players.total_points as player_points',
         'user_teams.is_captain',
+        'user_teams.is_substitute',
         'user_teams.purchase_price'
       ]);
     
@@ -976,6 +1093,7 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
           position: row.player_position,
           points: row.player_points,
           is_captain: row.is_captain,
+          is_substitute: row.is_substitute,
           purchase_price: row.purchase_price
         });
       }
