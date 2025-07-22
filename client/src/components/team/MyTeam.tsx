@@ -7,6 +7,7 @@ import { useUserData } from '@/hooks/useUserData';
 import { useAuth } from '@/hooks/useAuth';
 import { CricketPitchView } from '@/components/team/CricketPitchView';
 import { SubstituteBench } from '@/components/team/SubstituteBench';
+import { RoundStatus } from '@/components/rounds/RoundStatus';
 import toast, { Toaster } from 'react-hot-toast';
 
 export function MyTeam() {
@@ -37,10 +38,17 @@ export function MyTeam() {
         refetchUser();
       } else {
         const error = await response.json();
-        toast.error(error.error, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        if (response.status === 423) {
+          toast.error('Team changes are locked during active round', {
+            duration: 4000,
+            position: 'top-center',
+          });
+        } else {
+          toast.error(error.error, {
+            duration: 4000,
+            position: 'top-center',
+          });
+        }
       }
     } catch (error) {
       console.error('Error selling player:', error);
@@ -72,10 +80,17 @@ export function MyTeam() {
         refetch();
       } else {
         const error = await response.json();
-        toast.error(error.error, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        if (response.status === 423) {
+          toast.error('Team changes are locked during active round', {
+            duration: 4000,
+            position: 'top-center',
+          });
+        } else {
+          toast.error(error.error, {
+            duration: 4000,
+            position: 'top-center',
+          });
+        }
       }
     } catch (error) {
       console.error('Error setting captain:', error);
@@ -107,10 +122,17 @@ export function MyTeam() {
         refetch();
       } else {
         const error = await response.json();
-        toast.error(error.error, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        if (response.status === 423) {
+          toast.error('Team changes are locked during active round', {
+            duration: 4000,
+            position: 'top-center',
+          });
+        } else {
+          toast.error(error.error, {
+            duration: 4000,
+            position: 'top-center',
+          });
+        }
       }
     } catch (error) {
       console.error('Error substituting player:', error);
@@ -130,8 +152,13 @@ export function MyTeam() {
   const substitutes = team.filter(player => player.is_substitute);
   
   const totalValue = team.reduce((sum, player) => sum + (player.current_price || 0), 0);
-  const totalPoints = mainTeam.reduce((sum, player) => {
-    let points = player.total_points || 0;
+  const totalCurrentPoints = mainTeam.reduce((sum, player) => {
+    let points = player.current_round_points || 0;
+    if (player.is_captain) points *= 2;
+    return sum + points;
+  }, 0);
+  const totalOverallPoints = mainTeam.reduce((sum, player) => {
+    let points = (player.total_points || 0) + (player.current_round_points || 0);
     if (player.is_captain) points *= 2;
     return sum + points;
   }, 0);
@@ -156,12 +183,16 @@ export function MyTeam() {
   return (
     <div>
       <Toaster />
+      
+      {/* Round Status */}
+      <RoundStatus />
+      
       <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Available Budget</p>
-              <p className="text-2xl font-bold">${user?.budget?.toLocaleString() || 0}</p>
+              <p className="text-2xl font-bold">${user?.budget?.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -184,8 +215,8 @@ export function MyTeam() {
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">Total Points</p>
-              <p className="text-2xl font-bold">{totalPoints}</p>
+              <p className="text-sm text-muted-foreground">Round Points</p>
+              <p className="text-2xl font-bold">{totalCurrentPoints} ({totalOverallPoints})</p>
             </div>
           </CardContent>
         </Card>

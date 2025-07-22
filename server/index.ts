@@ -12,6 +12,39 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Check if rounds are locked (middleware)
+async function checkLockout(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const activeRound = await db.selectFrom('rounds')
+      .selectAll()
+      .where('is_active', '=', 1)
+      .executeTakeFirst();
+
+    if (activeRound) {
+      const now = new Date();
+      const lockoutTime = new Date(activeRound.lockout_time);
+      
+      if (now >= lockoutTime && !activeRound.is_locked) {
+        // Update round to locked
+        await db.updateTable('rounds')
+          .set({ is_locked: 1 })
+          .where('id', '=', activeRound.id)
+          .execute();
+      }
+      
+      if (activeRound.is_locked || now >= lockoutTime) {
+        res.status(423).json({ error: 'Team changes are locked during active round' });
+        return;
+      }
+    }
+
+    next();
+  } catch (error) {
+    console.error('Lockout check error:', error);
+    next();
+  }
+}
+
 // Calculate points based on stats with position-based bonuses
 function calculatePoints(stats: any, playerPosition: string): number {
   let points = 0;
@@ -358,97 +391,199 @@ app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) 
   }
 });
 
-// Get all matches (public) with search
-app.get('/api/matches', async (req, res) => {
+// ROUNDS MANAGEMENT
+
+// Get all rounds (public) with search
+app.get('/api/rounds', async (req, res) => {
   try {
     const { search } = req.query;
-    console.log('Fetching matches with search:', search);
+    console.log('Fetching rounds with search:', search);
     
-    let query = db.selectFrom('matches').selectAll();
+    let query = db.selectFrom('rounds').selectAll().orderBy('round_number', 'asc');
     
     if (search && typeof search === 'string') {
-      query = query.where((eb) => eb.or([
-        eb('match_name', 'like', `%${search}%`),
-        eb('team1', 'like', `%${search}%`),
-        eb('team2', 'like', `%${search}%`)
-      ]));
+      query = query.where('name', 'like', `%${search}%`);
     }
     
-    const matches = await query.execute();
-    console.log(`Found ${matches.length} matches`);
-    res.json(matches);
+    const rounds = await query.execute();
+    console.log(`Found ${rounds.length} rounds`);
+    res.json(rounds);
   } catch (error) {
-    console.error('Error fetching matches:', error);
-    res.status(500).json({ error: 'Failed to fetch matches' });
+    console.error('Error fetching rounds:', error);
+    res.status(500).json({ error: 'Failed to fetch rounds' });
   }
 });
 
-// Create a new match (admin only)
-app.post('/api/matches', authenticateUser, requireAdmin, async (req, res) => {
+// Get current active round
+app.get('/api/current-round', async (req, res) => {
   try {
-    const { match_name, date, team1, team2 } = req.body;
-    console.log('Creating match:', { match_name, date, team1, team2 });
+    const activeRound = await db.selectFrom('rounds')
+      .selectAll()
+      .where('is_active', '=', 1)
+      .executeTakeFirst();
     
-    const match = await db.insertInto('matches')
+    if (activeRound) {
+      const now = new Date();
+      const lockoutTime = new Date(activeRound.lockout_time);
+      const isLocked = now >= lockoutTime;
+      
+      res.json({
+        ...activeRound,
+        is_locked: isLocked,
+        time_until_lockout: isLocked ? 0 : lockoutTime.getTime() - now.getTime()
+      });
+    } else {
+      res.json(null);
+    }
+  } catch (error) {
+    console.error('Error fetching current round:', error);
+    res.status(500).json({ error: 'Failed to fetch current round' });
+  }
+});
+
+// Create a new round (admin only)
+app.post('/api/rounds', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const { name, round_number, lockout_time } = req.body;
+    console.log('Creating round:', { name, round_number, lockout_time });
+    
+    // Convert to Australian Eastern Standard Time
+    const lockoutDate = new Date(lockout_time);
+    
+    const round = await db.insertInto('rounds')
       .values({
-        match_name,
-        date,
-        team1,
-        team2
+        name,
+        round_number,
+        lockout_time: lockoutDate.toISOString(),
+        is_locked: 0,
+        is_active: 0
       })
       .returningAll()
       .executeTakeFirst();
     
-    console.log('Created match:', match);
-    res.json(match);
+    console.log('Created round:', round);
+    res.json(round);
   } catch (error) {
-    console.error('Error creating match:', error);
-    res.status(500).json({ error: 'Failed to create match' });
+    console.error('Error creating round:', error);
+    res.status(500).json({ error: 'Failed to create round' });
   }
 });
 
-// Delete match (admin only)
-app.delete('/api/matches/:id', authenticateUser, requireAdmin, async (req, res) => {
+// Update round (admin only)
+app.put('/api/rounds/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const matchId = parseInt(req.params.id);
-    console.log('Admin deleting match:', matchId);
+    const roundId = parseInt(req.params.id);
+    const { name, round_number, lockout_time, is_active } = req.body;
+    console.log('Admin updating round:', roundId);
 
-    // Check if match has stats
-    const matchHasStats = await db.selectFrom('player_stats')
-      .selectAll()
-      .where('match_id', '=', matchId)
-      .executeTakeFirst();
-
-    if (matchHasStats) {
-      res.status(400).json({ error: 'Cannot delete match that has player stats' });
-      return;
+    // If setting this round as active, deactivate all others
+    if (is_active) {
+      await db.updateTable('rounds')
+        .set({ is_active: 0 })
+        .execute();
     }
 
-    // Check if match has H2H matchups
-    const matchHasH2H = await db.selectFrom('h2h_matchups')
-      .selectAll()
-      .where('match_id', '=', matchId)
-      .executeTakeFirst();
+    const lockoutDate = new Date(lockout_time);
 
-    if (matchHasH2H) {
-      res.status(400).json({ error: 'Cannot delete match that has H2H matchups' });
-      return;
-    }
-
-    // Delete match
-    await db.deleteFrom('matches')
-      .where('id', '=', matchId)
+    await db.updateTable('rounds')
+      .set({ 
+        name, 
+        round_number, 
+        lockout_time: lockoutDate.toISOString(),
+        is_active: is_active ? 1 : 0,
+        is_locked: 0 // Reset locked status when updating
+      })
+      .where('id', '=', roundId)
       .execute();
 
-    console.log('Match deleted successfully');
-    res.json({ success: true });
+    const updatedRound = await db.selectFrom('rounds')
+      .selectAll()
+      .where('id', '=', roundId)
+      .executeTakeFirst();
+
+    console.log('Round updated by admin:', updatedRound);
+    res.json(updatedRound);
   } catch (error) {
-    console.error('Error deleting match:', error);
-    res.status(500).json({ error: 'Failed to delete match' });
+    console.error('Admin round update error:', error);
+    res.status(500).json({ error: 'Failed to update round' });
   }
 });
 
-// Add player stats (admin only)
+// Delete round (admin only)
+app.delete('/api/rounds/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    console.log('Admin deleting round:', roundId);
+
+    // Check if round has stats
+    const roundHasStats = await db.selectFrom('player_stats')
+      .selectAll()
+      .where('round_id', '=', roundId)
+      .executeTakeFirst();
+
+    if (roundHasStats) {
+      res.status(400).json({ error: 'Cannot delete round that has player stats' });
+      return;
+    }
+
+    // Check if round has H2H matchups
+    const roundHasH2H = await db.selectFrom('h2h_matchups')
+      .selectAll()
+      .where('round_id', '=', roundId)
+      .executeTakeFirst();
+
+    if (roundHasH2H) {
+      res.status(400).json({ error: 'Cannot delete round that has H2H matchups' });
+      return;
+    }
+
+    // Delete round
+    await db.deleteFrom('rounds')
+      .where('id', '=', roundId)
+      .execute();
+
+    console.log('Round deleted successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting round:', error);
+    res.status(500).json({ error: 'Failed to delete round' });
+  }
+});
+
+// Start new round (admin only) - resets current round points
+app.post('/api/start-round/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    console.log('Starting new round:', roundId);
+
+    // Add current round points to total points for all players
+    await db.updateTable('players')
+      .set((eb) => ({ 
+        total_points: eb('total_points', '+', eb.ref('current_round_points')),
+        current_round_points: 0
+      }))
+      .execute();
+
+    // Set all rounds to inactive
+    await db.updateTable('rounds')
+      .set({ is_active: 0, is_locked: 0 })
+      .execute();
+
+    // Set the selected round as active
+    await db.updateTable('rounds')
+      .set({ is_active: 1, is_locked: 0 })
+      .where('id', '=', roundId)
+      .execute();
+
+    console.log('New round started successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error starting new round:', error);
+    res.status(500).json({ error: 'Failed to start new round' });
+  }
+});
+
+// Add player stats for round (admin only)
 app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const stats = req.body;
@@ -467,34 +602,34 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
     const playerStats = await db.insertInto('player_stats')
       .values({
         ...stats,
-        points
+        round_points: points
       })
       .returningAll()
       .executeTakeFirst();
     
-    // Update player totals
+    // Update player current round points
     const existingStats = await db.selectFrom('player_stats')
-      .select(['points'])
+      .select(['round_points'])
       .where('player_id', '=', stats.player_id)
+      .where('round_id', '=', stats.round_id)
       .execute();
     
-    const totalPoints = existingStats.reduce((sum, stat) => sum + stat.points, 0);
-    const matchesPlayed = existingStats.length;
+    const roundPoints = existingStats.reduce((sum, stat) => sum + stat.round_points, 0);
     
     // Update player current price based on performance
-    const newPrice = Math.max(50000, 100000 + (totalPoints * 1000));
+    const newPrice = Math.max(50000, 100000 + ((player.total_points + roundPoints) * 1000));
     
     await db.updateTable('players')
       .set({
-        total_points: totalPoints,
-        matches_played: matchesPlayed,
-        current_price: newPrice
+        current_round_points: roundPoints,
+        current_price: newPrice,
+        matches_played: existingStats.length
       })
       .where('id', '=', stats.player_id)
       .execute();
 
     // Update H2H matchup scores
-    await updateH2HScores(stats.match_id);
+    await updateH2HScores(stats.round_id);
     
     console.log('Added player stats and updated player:', playerStats);
     res.json(playerStats);
@@ -511,7 +646,7 @@ app.get('/api/players/:id/stats', async (req, res) => {
     console.log('Fetching stats for player:', playerId);
     
     const stats = await db.selectFrom('player_stats')
-      .leftJoin('matches', 'player_stats.match_id', 'matches.id')
+      .leftJoin('rounds', 'player_stats.round_id', 'rounds.id')
       .selectAll()
       .where('player_id', '=', playerId)
       .execute();
@@ -544,8 +679,8 @@ app.get('/api/my-team', authenticateUser, async (req, res) => {
   }
 });
 
-// Buy player with position constraints
-app.post('/api/buy-player', authenticateUser, async (req, res) => {
+// Buy player with position constraints and lockout check
+app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
     const { playerId, isSubstitute } = req.body;
@@ -653,8 +788,8 @@ app.post('/api/buy-player', authenticateUser, async (req, res) => {
   }
 });
 
-// Sell player
-app.post('/api/sell-player', authenticateUser, async (req, res) => {
+// Sell player with lockout check
+app.post('/api/sell-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
     const { playerId } = req.body;
@@ -706,8 +841,8 @@ app.post('/api/sell-player', authenticateUser, async (req, res) => {
   }
 });
 
-// Set captain
-app.post('/api/set-captain', authenticateUser, async (req, res) => {
+// Set captain with lockout check
+app.post('/api/set-captain', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
     const { playerId } = req.body;
@@ -751,8 +886,8 @@ app.post('/api/set-captain', authenticateUser, async (req, res) => {
   }
 });
 
-// Substitute player (swap main player with substitute)
-app.post('/api/substitute-player', authenticateUser, async (req, res) => {
+// Substitute player with lockout check
+app.post('/api/substitute-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
     const { mainPlayerId, substitutePlayerId } = req.body;
@@ -818,12 +953,13 @@ app.get('/api/leaderboard', async (req, res) => {
         'users.id as user_id',
         'users.username',
         'players.total_points',
+        'players.current_round_points',
         'user_teams.is_captain',
         'user_teams.is_substitute'
       ])
       .execute();
     
-    // Calculate team totals (only main team players count)
+    // Calculate team totals (only main team players count, including current round)
     const teamTotals = teams.reduce((acc, team) => {
       if (!acc[team.user_id]) {
         acc[team.user_id] = {
@@ -835,7 +971,7 @@ app.get('/api/leaderboard', async (req, res) => {
       
       // Only count points from main team players (not substitutes)
       if (!team.is_substitute) {
-        let points = team.total_points || 0;
+        let points = (team.total_points || 0) + (team.current_round_points || 0);
         if (team.is_captain) {
           points *= 2; // Double points for captain
         }
@@ -856,7 +992,7 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// H2H Matchup routes - ADMIN ONLY
+// H2H Matchup routes
 app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -865,7 +1001,7 @@ app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
     const matchups = await db.selectFrom('h2h_matchups')
       .leftJoin('users as user1', 'h2h_matchups.user1_id', 'user1.id')
       .leftJoin('users as user2', 'h2h_matchups.user2_id', 'user2.id')
-      .leftJoin('matches', 'h2h_matchups.match_id', 'matches.id')
+      .leftJoin('rounds', 'h2h_matchups.round_id', 'rounds.id')
       .leftJoin('users as winner', 'h2h_matchups.winner_id', 'winner.id')
       .select([
         'h2h_matchups.id',
@@ -876,8 +1012,7 @@ app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
         'h2h_matchups.created_at',
         'user1.username as user1_name',
         'user2.username as user2_name',
-        'matches.match_name',
-        'matches.date as match_date',
+        'rounds.name as round_name',
         'winner.username as winner_name'
       ])
       .where((eb) => eb.or([
@@ -896,8 +1031,8 @@ app.get('/api/h2h-matchups', authenticateUser, async (req, res) => {
 // Create H2H matchup - ADMIN ONLY
 app.post('/api/h2h-matchups', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const { name, user1Username, user2Username, matchId } = req.body;
-    console.log('Admin creating H2H matchup:', { name, user1Username, user2Username, matchId });
+    const { name, user1Username, user2Username, roundId } = req.body;
+    console.log('Admin creating H2H matchup:', { name, user1Username, user2Username, roundId });
     
     // Find both users
     const user1 = await db.selectFrom('users')
@@ -925,14 +1060,14 @@ app.post('/api/h2h-matchups', authenticateUser, requireAdmin, async (req, res) =
       return;
     }
     
-    // Check if match exists
-    const match = await db.selectFrom('matches')
+    // Check if round exists
+    const round = await db.selectFrom('rounds')
       .selectAll()
-      .where('id', '=', matchId)
+      .where('id', '=', roundId)
       .executeTakeFirst();
     
-    if (!match) {
-      res.status(404).json({ error: 'Match not found' });
+    if (!round) {
+      res.status(404).json({ error: 'Round not found' });
       return;
     }
     
@@ -941,7 +1076,7 @@ app.post('/api/h2h-matchups', authenticateUser, requireAdmin, async (req, res) =
         name,
         user1_id: user1.id,
         user2_id: user2.id,
-        match_id: matchId,
+        round_id: roundId,
         status: 'pending'
       })
       .returningAll()
@@ -956,29 +1091,29 @@ app.post('/api/h2h-matchups', authenticateUser, requireAdmin, async (req, res) =
 });
 
 // Function to update H2H scores when stats are added
-async function updateH2HScores(matchId: number) {
+async function updateH2HScores(roundId: number) {
   try {
-    console.log('Updating H2H scores for match:', matchId);
+    console.log('Updating H2H scores for round:', roundId);
     
-    // Get all active matchups for this match
+    // Get all active matchups for this round
     const matchups = await db.selectFrom('h2h_matchups')
       .selectAll()
-      .where('match_id', '=', matchId)
+      .where('round_id', '=', roundId)
       .where('status', '=', 'pending')
       .execute();
     
     for (const matchup of matchups) {
-      // Calculate scores for both users (only main team players)
-      const user1Score = await calculateUserScoreForMatch(matchup.user1_id, matchId);
-      const user2Score = await calculateUserScoreForMatch(matchup.user2_id, matchId);
+      // Calculate scores for both users (only main team players, including current round)
+      const user1Score = await calculateUserScoreForRound(matchup.user1_id, roundId);
+      const user2Score = await calculateUserScoreForRound(matchup.user2_id, roundId);
       
       let winner_id = null;
       let status = 'pending';
       
-      // Check if match has stats (meaning it's completed)
+      // Check if round has stats (meaning it's completed)
       const hasStats = await db.selectFrom('player_stats')
         .selectAll()
-        .where('match_id', '=', matchId)
+        .where('round_id', '=', roundId)
         .executeTakeFirst();
       
       if (hasStats) {
@@ -1006,17 +1141,17 @@ async function updateH2HScores(matchId: number) {
   }
 }
 
-async function calculateUserScoreForMatch(userId: number, matchId: number): Promise<number> {
+async function calculateUserScoreForRound(userId: number, roundId: number): Promise<number> {
   try {
     const userTeam = await db.selectFrom('user_teams')
       .leftJoin('player_stats', (join) => join
         .onRef('user_teams.player_id', '=', 'player_stats.player_id')
-        .on('player_stats.match_id', '=', matchId)
+        .on('player_stats.round_id', '=', roundId)
       )
       .select([
         'user_teams.is_captain',
         'user_teams.is_substitute',
-        'player_stats.points'
+        'player_stats.round_points'
       ])
       .where('user_teams.user_id', '=', userId)
       .execute();
@@ -1025,7 +1160,7 @@ async function calculateUserScoreForMatch(userId: number, matchId: number): Prom
       // Only count points from main team players (not substitutes)
       if (player.is_substitute) return total;
       
-      let points = player.points || 0;
+      let points = player.round_points || 0;
       if (player.is_captain) {
         points *= 2; // Double points for captain
       }
@@ -1056,7 +1191,8 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
         'users.created_at',
         'players.name as player_name',
         'players.position as player_position',
-        'players.total_points as player_points',
+        'players.total_points as player_total_points',
+        'players.current_round_points as player_current_points',
         'user_teams.is_captain',
         'user_teams.is_substitute',
         'user_teams.purchase_price'
@@ -1091,7 +1227,8 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
         usersMap.get(row.id).team.push({
           name: row.player_name,
           position: row.player_position,
-          points: row.player_points,
+          total_points: row.player_total_points,
+          current_points: row.player_current_points,
           is_captain: row.is_captain,
           is_substitute: row.is_substitute,
           purchase_price: row.purchase_price
@@ -1117,7 +1254,7 @@ app.get('/api/admin/h2h-matchups', authenticateUser, requireAdmin, async (req, r
     const matchups = await db.selectFrom('h2h_matchups')
       .leftJoin('users as user1', 'h2h_matchups.user1_id', 'user1.id')
       .leftJoin('users as user2', 'h2h_matchups.user2_id', 'user2.id')
-      .leftJoin('matches', 'h2h_matchups.match_id', 'matches.id')
+      .leftJoin('rounds', 'h2h_matchups.round_id', 'rounds.id')
       .leftJoin('users as winner', 'h2h_matchups.winner_id', 'winner.id')
       .select([
         'h2h_matchups.id',
@@ -1128,8 +1265,7 @@ app.get('/api/admin/h2h-matchups', authenticateUser, requireAdmin, async (req, r
         'h2h_matchups.created_at',
         'user1.username as user1_name',
         'user2.username as user2_name',
-        'matches.match_name',
-        'matches.date as match_date',
+        'rounds.name as round_name',
         'winner.username as winner_name'
       ])
       .execute();

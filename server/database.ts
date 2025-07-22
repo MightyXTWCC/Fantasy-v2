@@ -26,21 +26,23 @@ export interface DatabaseSchema {
     base_price: number;
     current_price: number;
     total_points: number;
+    current_round_points: number;
     matches_played: number;
     created_at: string;
   };
-  matches: {
+  rounds: {
     id: number;
-    match_name: string;
-    date: string;
-    team1: string;
-    team2: string;
+    name: string;
+    round_number: number;
+    lockout_time: string;
+    is_locked: number;
+    is_active: number;
     created_at: string;
   };
   player_stats: {
     id: number;
     player_id: number;
-    match_id: number;
+    round_id: number;
     runs: number;
     balls_faced: number;
     fours: number;
@@ -51,7 +53,7 @@ export interface DatabaseSchema {
     catches: number;
     stumpings: number;
     run_outs: number;
-    points: number;
+    round_points: number;
     created_at: string;
   };
   user_teams: {
@@ -69,7 +71,7 @@ export interface DatabaseSchema {
     name: string;
     user1_id: number;
     user2_id: number;
-    match_id: number;
+    round_id: number;
     status: string;
     user1_score: number;
     user2_score: number;

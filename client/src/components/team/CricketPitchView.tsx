@@ -23,12 +23,23 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
         <CardTitle>Cricket Pitch Formation</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative bg-gradient-to-b from-green-100 to-green-200 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6 min-h-[600px] border-2 border-green-300 dark:border-green-700">
+        <div className="relative bg-gradient-to-b from-green-100 to-green-200 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-8 min-h-[800px] border-2 border-green-300 dark:border-green-700">
           
-          {/* Wicket Keeper (Top) */}
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
-            <div className="text-center mb-2">
-              <Badge variant="outline" className="mb-2">Wicket Keeper</Badge>
+          {/* Top Stumps */}
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2">
+            <div className="flex space-x-1">
+              {[1,2,3].map(i => (
+                <div key={i} className="w-1 h-8 bg-yellow-600 rounded-sm"></div>
+              ))}
+            </div>
+            {/* Bails */}
+            <div className="w-6 h-1 bg-yellow-600 rounded-sm -mt-1"></div>
+          </div>
+
+          {/* Wicket Keeper (Behind top stumps) */}
+          <div className="absolute top-20 left-1/2 transform -translate-x-1/2">
+            <div className="text-center mb-4">
+              <Badge variant="outline" className="mb-3">Wicket Keeper</Badge>
             </div>
             {keeper ? (
               <PlayerCard 
@@ -37,18 +48,21 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
                 onSellPlayer={onSellPlayer}
               />
             ) : (
-              <div className="w-32 h-40 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+              <div className="w-28 h-36 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-xs text-muted-foreground text-center p-2">
                 No Keeper
               </div>
             )}
           </div>
 
+          {/* Cricket Pitch (Brown Rectangle) */}
+          <div className="absolute top-48 left-1/2 transform -translate-x-1/2 w-20 h-96 bg-amber-800 border-2 border-amber-900 rounded-sm opacity-60"></div>
+
           {/* Batsmen (Upper Middle) */}
-          <div className="absolute top-24 left-1/2 transform -translate-x-1/2 w-full">
-            <div className="text-center mb-2">
-              <Badge variant="outline" className="mb-2">Batsmen</Badge>
+          <div className="absolute top-64 left-1/2 transform -translate-x-1/2 w-full">
+            <div className="text-center mb-4">
+              <Badge variant="outline" className="mb-3">Batsmen</Badge>
             </div>
-            <div className="flex justify-center space-x-8">
+            <div className="flex justify-center space-x-16">
               {[0, 1].map(index => (
                 <div key={index}>
                   {batsmen[index] ? (
@@ -58,7 +72,7 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
                       onSellPlayer={onSellPlayer}
                     />
                   ) : (
-                    <div className="w-32 h-40 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+                    <div className="w-28 h-36 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-xs text-muted-foreground text-center p-2">
                       No Batsman
                     </div>
                   )}
@@ -68,9 +82,9 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
           </div>
 
           {/* All-rounder (Center) */}
-          <div className="absolute top-72 left-1/2 transform -translate-x-1/2">
-            <div className="text-center mb-2">
-              <Badge variant="outline" className="mb-2">All-rounder</Badge>
+          <div className="absolute top-80 left-1/2 transform -translate-x-1/2">
+            <div className="text-center mb-4">
+              <Badge variant="outline" className="mb-3">All-rounder</Badge>
             </div>
             {allRounder ? (
               <PlayerCard 
@@ -79,18 +93,18 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
                 onSellPlayer={onSellPlayer}
               />
             ) : (
-              <div className="w-32 h-40 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+              <div className="w-28 h-36 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-xs text-muted-foreground text-center p-2">
                 No All-rounder
               </div>
             )}
           </div>
 
-          {/* Bowlers (Bottom) */}
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 w-full">
-            <div className="text-center mb-2">
-              <Badge variant="outline" className="mb-2">Bowlers</Badge>
+          {/* Bowlers (Lower area) */}
+          <div className="absolute top-96 left-1/2 transform -translate-x-1/2 w-full mt-16">
+            <div className="text-center mb-4">
+              <Badge variant="outline" className="mb-3">Bowlers</Badge>
             </div>
-            <div className="flex justify-center space-x-8">
+            <div className="flex justify-center space-x-16">
               {[0, 1].map(index => (
                 <div key={index}>
                   {bowlers[index] ? (
@@ -100,7 +114,7 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
                       onSellPlayer={onSellPlayer}
                     />
                   ) : (
-                    <div className="w-32 h-40 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-sm text-muted-foreground">
+                    <div className="w-28 h-36 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center text-xs text-muted-foreground text-center p-2">
                       No Bowler
                     </div>
                   )}
@@ -109,13 +123,15 @@ export function CricketPitchView({ team, onSetCaptain, onSellPlayer }: CricketPi
             </div>
           </div>
 
-          {/* Cricket Stumps (Decorative) */}
-          <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2">
+          {/* Bottom Stumps */}
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
             <div className="flex space-x-1">
               {[1,2,3].map(i => (
-                <div key={i} className="w-1 h-6 bg-yellow-600 rounded-sm"></div>
+                <div key={i} className="w-1 h-8 bg-yellow-600 rounded-sm"></div>
               ))}
             </div>
+            {/* Bails */}
+            <div className="w-6 h-1 bg-yellow-600 rounded-sm -mt-1"></div>
           </div>
         </div>
       </CardContent>

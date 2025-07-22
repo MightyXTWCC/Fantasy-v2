@@ -12,9 +12,12 @@ interface PlayerCardProps {
 }
 
 export function PlayerCard({ player, onSetCaptain, onSellPlayer, showActions = true }: PlayerCardProps) {
+  const currentPoints = player.current_round_points || 0;
+  const totalPoints = player.total_points || 0;
+
   return (
-    <Card className="w-32 h-40 relative">
-      <CardContent className="p-2 h-full flex flex-col">
+    <Card className="w-28 h-36 relative">
+      <CardContent className="p-1 h-full flex flex-col">
         {/* Captain Badge */}
         {player.is_captain && (
           <Badge variant="default" className="absolute -top-2 -right-2 text-xs z-10">C</Badge>
@@ -22,7 +25,7 @@ export function PlayerCard({ player, onSetCaptain, onSellPlayer, showActions = t
         
         {/* Position Icon */}
         <div className="flex justify-center mb-1">
-          <PositionIcon position={player.position} className="w-6 h-6" />
+          <PositionIcon position={player.position} className="w-4 h-4" />
         </div>
         
         {/* Player Name */}
@@ -35,8 +38,11 @@ export function PlayerCard({ player, onSetCaptain, onSellPlayer, showActions = t
         {/* Points */}
         <div className="text-center mb-2">
           <p className="text-xs text-muted-foreground">
-            {player.total_points} pts
+            {currentPoints}
             {player.is_captain && ' (x2)'}
+          </p>
+          <p className="text-xs text-muted-foreground opacity-75">
+            ({totalPoints})
           </p>
         </div>
         
@@ -46,7 +52,7 @@ export function PlayerCard({ player, onSetCaptain, onSellPlayer, showActions = t
             <Button 
               variant="outline"
               size="sm"
-              className="w-full text-xs h-6"
+              className="w-full text-xs h-5"
               onClick={() => onSetCaptain(player.player_id)}
               disabled={player.is_captain}
             >
@@ -55,7 +61,7 @@ export function PlayerCard({ player, onSetCaptain, onSellPlayer, showActions = t
             <Button 
               variant="destructive"
               size="sm"
-              className="w-full text-xs h-6"
+              className="w-full text-xs h-5"
               onClick={() => onSellPlayer(player.player_id)}
             >
               Sell

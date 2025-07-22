@@ -2,8 +2,8 @@ import * as React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CreatePlayer } from '@/components/admin/CreatePlayer';
 import { ManagePlayers } from '@/components/admin/ManagePlayers';
-import { CreateMatch } from '@/components/admin/CreateMatch';
-import { ManageMatches } from '@/components/admin/ManageMatches';
+import { CreateRound } from '@/components/admin/CreateRound';
+import { ManageRounds } from '@/components/admin/ManageRounds';
 import { AddStats } from '@/components/admin/AddStats';
 import { ManageUsers } from '@/components/admin/ManageUsers';
 import { H2HManagement } from '@/components/admin/H2HManagement';
@@ -15,8 +15,8 @@ export function AdminPanel() {
       <TabsList className="grid w-full grid-cols-8">
         <TabsTrigger value="create-player">Create Player</TabsTrigger>
         <TabsTrigger value="manage-players">Manage Players</TabsTrigger>
-        <TabsTrigger value="create-match">Create Match</TabsTrigger>
-        <TabsTrigger value="manage-matches">Manage Matches</TabsTrigger>
+        <TabsTrigger value="create-round">Create Round</TabsTrigger>
+        <TabsTrigger value="manage-rounds">Manage Rounds</TabsTrigger>
         <TabsTrigger value="stats">Add Stats</TabsTrigger>
         <TabsTrigger value="users">Manage Users</TabsTrigger>
         <TabsTrigger value="h2h">H2H Matchups</TabsTrigger>
@@ -31,12 +31,12 @@ export function AdminPanel() {
         <ManagePlayers />
       </TabsContent>
       
-      <TabsContent value="create-match">
-        <CreateMatch />
+      <TabsContent value="create-round">
+        <CreateRound />
       </TabsContent>
       
-      <TabsContent value="manage-matches">
-        <ManageMatches />
+      <TabsContent value="manage-rounds">
+        <ManageRounds />
       </TabsContent>
       
       <TabsContent value="stats">

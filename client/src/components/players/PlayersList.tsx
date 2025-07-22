@@ -58,10 +58,17 @@ export function PlayersList() {
         window.location.reload(); // Refresh to update budget
       } else {
         const error = await response.json();
-        toast.error(error.error, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        if (response.status === 423) {
+          toast.error('Team changes are locked during active round', {
+            duration: 4000,
+            position: 'top-center',
+          });
+        } else {
+          toast.error(error.error, {
+            duration: 4000,
+            position: 'top-center',
+          });
+        }
       }
     } catch (error) {
       console.error('Error buying player:', error);
@@ -85,6 +92,9 @@ export function PlayersList() {
   };
 
   const renderPlayerCard = function(player) {
+    const currentPoints = player.current_round_points || 0;
+    const totalPoints = player.total_points || 0;
+
     return (
       <Card key={player.id} className="hover:shadow-lg transition-shadow">
         <CardHeader>
@@ -99,7 +109,7 @@ export function PlayersList() {
         <CardContent>
           <div className="space-y-2">
             <p><strong>Price:</strong> ${player.current_price.toLocaleString()}</p>
-            <p><strong>Total Points:</strong> {player.total_points}</p>
+            <p><strong>Round Points:</strong> {currentPoints} <span className="text-muted-foreground">({totalPoints})</span></p>
             <p><strong>Matches:</strong> {player.matches_played}</p>
             <div className="space-y-2 mt-4">
               <Button 
@@ -130,7 +140,7 @@ export function PlayersList() {
       <div className="mb-6 space-y-4">
         <div className="p-4 bg-muted rounded-lg">
           <p className="text-lg font-semibold">
-            Budget: ${user?.budget?.toLocaleString() || 0}
+            Budget: ${user?.budget?.toLocaleString()}
           </p>
         </div>
         
