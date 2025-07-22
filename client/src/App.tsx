@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
 import { PlayersPage } from '@/pages/PlayersPage';
-import { MatchesPage } from '@/pages/MatchesPage';
+import { RoundsPage } from '@/pages/RoundsPage';
 import { MyTeamPage } from '@/pages/MyTeamPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { LeaderboardPage } from '@/pages/LeaderboardPage';
@@ -37,8 +37,8 @@ function AppContent() {
                 <Link to="/">
                   <Button variant="ghost">Players</Button>
                 </Link>
-                <Link to="/matches">
-                  <Button variant="ghost">Matches</Button>
+                <Link to="/rounds">
+                  <Button variant="ghost">Rounds</Button>
                 </Link>
                 <Link to="/my-team">
                   <Button variant="ghost">My Team</Button>
@@ -73,7 +73,7 @@ function AppContent() {
         <main className="container mx-auto px-4 py-8">
           <Routes>
             <Route path="/" element={<PlayersPage />} />
-            <Route path="/matches" element={<MatchesPage />} />
+            <Route path="/rounds" element={<RoundsPage />} />
             <Route path="/my-team" element={<MyTeamPage />} />
             <Route path="/h2h" element={<H2HPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
