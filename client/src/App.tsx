@@ -9,6 +9,7 @@ import { MyTeamPage } from '@/pages/MyTeamPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { LeaderboardPage } from '@/pages/LeaderboardPage';
 import { H2HPage } from '@/pages/H2HPage';
+import { AccountPage } from '@/pages/AccountPage';
 
 function AppContent() {
   const { user, logout, loading } = useAuth();
@@ -53,6 +54,9 @@ function AppContent() {
                     <Button variant="ghost">Admin Panel</Button>
                   </Link>
                 )}
+                <Link to="/account">
+                  <Button variant="ghost">Account</Button>
+                </Link>
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-muted-foreground">
                     {user.username}{user.is_admin && ' (Admin)'}
@@ -73,6 +77,7 @@ function AppContent() {
             <Route path="/my-team" element={<MyTeamPage />} />
             <Route path="/h2h" element={<H2HPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/account" element={<AccountPage />} />
             {user.is_admin && (
               <Route path="/admin" element={<AdminPage />} />
             )}

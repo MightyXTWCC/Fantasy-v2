@@ -10,7 +10,6 @@ export function CreatePlayer() {
   const { token } = useAuth();
   const [formData, setFormData] = React.useState({
     name: '',
-    team: '',
     position: '',
     base_price: 100000
   });
@@ -31,7 +30,7 @@ export function CreatePlayer() {
       });
       
       if (response.ok) {
-        setFormData({ name: '', team: '', position: '', base_price: 100000 });
+        setFormData({ name: '', position: '', base_price: 100000 });
         alert('Player created successfully!');
       }
     } catch (error) {
@@ -52,16 +51,6 @@ export function CreatePlayer() {
               id="name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
-          </div>
-          
-          <div>
-            <Label htmlFor="team">Team</Label>
-            <Input
-              id="team"
-              value={formData.team}
-              onChange={(e) => setFormData({ ...formData, team: e.target.value })}
               required
             />
           </div>

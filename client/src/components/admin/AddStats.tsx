@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { usePlayersData } from '@/hooks/usePlayersData';
-import { useMatchesData } from '@/hooks/useMatchesData';
 import { useAuth } from '@/hooks/useAuth';
 
 export function AddStats() {
-  const { players } = usePlayersData();
-  const { matches } = useMatchesData();
   const { token } = useAuth();
+  const [players, setPlayers] = React.useState([]);
+  const [matches, setMatches] = React.useState([]);
+  const [playerSearch, setPlayerSearch] = React.useState('');
+  const [matchSearch, setMatchSearch] = React.useState('');
   
   const [formData, setFormData] = React.useState({
     player_id: '',
@@ -27,6 +27,42 @@ export function AddStats() {
     stumpings: 0,
     run_outs: 0
   });
+
+  React.useEffect(() => {
+    const fetchPlayers = async function() {
+      try {
+        const params = new URLSearchParams();
+        if (playerSearch.trim()) {
+          params.append('search', playerSearch.trim());
+        }
+        const response = await fetch(`/api/players?${params}`);
+        const data = await response.json();
+        setPlayers(data);
+      } catch (error) {
+        console.error('Error fetching players:', error);
+      }
+    };
+
+    fetchPlayers();
+  }, [playerSearch]);
+
+  React.useEffect(() => {
+    const fetchMatches = async function() {
+      try {
+        const params = new URLSearchParams();
+        if (matchSearch.trim()) {
+          params.append('search', matchSearch.trim());
+        }
+        const response = await fetch(`/api/matches?${params}`);
+        const data = await response.json();
+        setMatches(data);
+      } catch (error) {
+        console.error('Error fetching matches:', error);
+      }
+    };
+
+    fetchMatches();
+  }, [matchSearch]);
 
   const handleSubmit = async function(e: React.FormEvent) {
     e.preventDefault();
@@ -79,34 +115,48 @@ export function AddStats() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Player</Label>
-              <Select value={formData.player_id} onValueChange={(value) => setFormData({ ...formData, player_id: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select player" />
-                </SelectTrigger>
-                <SelectContent>
-                  {players.map((player) => (
-                    <SelectItem key={player.id} value={player.id.toString()}>
-                      {player.name} ({player.team})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Search players..."
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                />
+                <Select value={formData.player_id} onValueChange={(value) => setFormData({ ...formData, player_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select player" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {players.map((player) => (
+                      <SelectItem key={player.id} value={player.id.toString()}>
+                        {player.name} ({player.position})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             
             <div>
               <Label>Match</Label>
-              <Select value={formData.match_id} onValueChange={(value) => setFormData({ ...formData, match_id: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select match" />
-                </SelectTrigger>
-                <SelectContent>
-                  {matches.map((match) => (
-                    <SelectItem key={match.id} value={match.id.toString()}>
-                      {match.match_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Search matches..."
+                  value={matchSearch}
+                  onChange={(e) => setMatchSearch(e.target.value)}
+                />
+                <Select value={formData.match_id} onValueChange={(value) => setFormData({ ...formData, match_id: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select match" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {matches.map((match) => (
+                      <SelectItem key={match.id} value={match.id.toString()}>
+                        {match.match_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           

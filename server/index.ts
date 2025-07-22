@@ -157,11 +157,130 @@ app.get('/api/me', authenticateUser, async (req, res) => {
   }
 });
 
-// Get all players (public)
+// Update user account
+app.put('/api/account', authenticateUser, async (req, res) => {
+  try {
+    const { username, email, currentPassword, newPassword } = req.body;
+    console.log('Account update attempt for user:', req.user.id);
+
+    // Verify current password
+    if (!await verifyPassword(currentPassword, req.user.password_hash)) {
+      res.status(400).json({ error: 'Current password is incorrect' });
+      return;
+    }
+
+    // Check if new username/email already exists (excluding current user)
+    if (username !== req.user.username || email !== req.user.email) {
+      const existingUser = await db.selectFrom('users')
+        .selectAll()
+        .where((eb) => eb.and([
+          eb('id', '!=', req.user.id),
+          eb.or([
+            eb('username', '=', username),
+            eb('email', '=', email)
+          ])
+        ]))
+        .executeTakeFirst();
+
+      if (existingUser) {
+        res.status(400).json({ error: 'Username or email already exists' });
+        return;
+      }
+    }
+
+    // Prepare update data
+    const updateData: any = { username, email };
+    
+    // Update password if provided
+    if (newPassword && newPassword.length >= 6) {
+      updateData.password_hash = await hashPassword(newPassword);
+    } else if (newPassword && newPassword.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters' });
+      return;
+    }
+
+    // Update user
+    await db.updateTable('users')
+      .set(updateData)
+      .where('id', '=', req.user.id)
+      .execute();
+
+    const updatedUser = await db.selectFrom('users')
+      .selectAll()
+      .where('id', '=', req.user.id)
+      .executeTakeFirst();
+
+    console.log('Account updated successfully for user:', updatedUser.username);
+
+    res.json({
+      id: updatedUser.id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      is_admin: updatedUser.is_admin,
+      budget: updatedUser.budget
+    });
+  } catch (error) {
+    console.error('Account update error:', error);
+    res.status(500).json({ error: 'Failed to update account' });
+  }
+});
+
+// Admin update any user
+app.put('/api/admin/users/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { username, email, budget, is_admin } = req.body;
+    console.log('Admin updating user:', userId);
+
+    // Check if username/email already exists (excluding target user)
+    const existingUser = await db.selectFrom('users')
+      .selectAll()
+      .where((eb) => eb.and([
+        eb('id', '!=', userId),
+        eb.or([
+          eb('username', '=', username),
+          eb('email', '=', email)
+        ])
+      ]))
+      .executeTakeFirst();
+
+    if (existingUser) {
+      res.status(400).json({ error: 'Username or email already exists' });
+      return;
+    }
+
+    // Update user
+    await db.updateTable('users')
+      .set({ username, email, budget, is_admin })
+      .where('id', '=', userId)
+      .execute();
+
+    const updatedUser = await db.selectFrom('users')
+      .selectAll()
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    console.log('User updated by admin:', updatedUser.username);
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Admin user update error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// Get all players (public) with search
 app.get('/api/players', async (req, res) => {
   try {
-    console.log('Fetching all players');
-    const players = await db.selectFrom('players').selectAll().execute();
+    const { search } = req.query;
+    console.log('Fetching players with search:', search);
+    
+    let query = db.selectFrom('players').selectAll();
+    
+    if (search && typeof search === 'string') {
+      query = query.where('name', 'like', `%${search}%`);
+    }
+    
+    const players = await query.execute();
     console.log(`Found ${players.length} players`);
     res.json(players);
   } catch (error) {
@@ -173,13 +292,12 @@ app.get('/api/players', async (req, res) => {
 // Create a new player (admin only)
 app.post('/api/players', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    const { name, team, position, base_price } = req.body;
-    console.log('Creating player:', { name, team, position, base_price });
+    const { name, position, base_price } = req.body;
+    console.log('Creating player:', { name, position, base_price });
     
     const player = await db.insertInto('players')
       .values({
         name,
-        team,
         position,
         base_price: base_price || 100000,
         current_price: base_price || 100000
@@ -195,11 +313,58 @@ app.post('/api/players', authenticateUser, requireAdmin, async (req, res) => {
   }
 });
 
-// Get all matches (public)
+// Delete player (admin only)
+app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const playerId = parseInt(req.params.id);
+    console.log('Admin deleting player:', playerId);
+
+    // Check if player exists in any user teams
+    const playerInTeams = await db.selectFrom('user_teams')
+      .selectAll()
+      .where('player_id', '=', playerId)
+      .executeTakeFirst();
+
+    if (playerInTeams) {
+      res.status(400).json({ error: 'Cannot delete player who is owned by users' });
+      return;
+    }
+
+    // Delete player stats first
+    await db.deleteFrom('player_stats')
+      .where('player_id', '=', playerId)
+      .execute();
+
+    // Delete player
+    await db.deleteFrom('players')
+      .where('id', '=', playerId)
+      .execute();
+
+    console.log('Player deleted successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting player:', error);
+    res.status(500).json({ error: 'Failed to delete player' });
+  }
+});
+
+// Get all matches (public) with search
 app.get('/api/matches', async (req, res) => {
   try {
-    console.log('Fetching all matches');
-    const matches = await db.selectFrom('matches').selectAll().execute();
+    const { search } = req.query;
+    console.log('Fetching matches with search:', search);
+    
+    let query = db.selectFrom('matches').selectAll();
+    
+    if (search && typeof search === 'string') {
+      query = query.where((eb) => eb.or([
+        eb('match_name', 'like', `%${search}%`),
+        eb('team1', 'like', `%${search}%`),
+        eb('team2', 'like', `%${search}%`)
+      ]));
+    }
+    
+    const matches = await query.execute();
     console.log(`Found ${matches.length} matches`);
     res.json(matches);
   } catch (error) {
@@ -229,6 +394,47 @@ app.post('/api/matches', authenticateUser, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error creating match:', error);
     res.status(500).json({ error: 'Failed to create match' });
+  }
+});
+
+// Delete match (admin only)
+app.delete('/api/matches/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const matchId = parseInt(req.params.id);
+    console.log('Admin deleting match:', matchId);
+
+    // Check if match has stats
+    const matchHasStats = await db.selectFrom('player_stats')
+      .selectAll()
+      .where('match_id', '=', matchId)
+      .executeTakeFirst();
+
+    if (matchHasStats) {
+      res.status(400).json({ error: 'Cannot delete match that has player stats' });
+      return;
+    }
+
+    // Check if match has H2H matchups
+    const matchHasH2H = await db.selectFrom('h2h_matchups')
+      .selectAll()
+      .where('match_id', '=', matchId)
+      .executeTakeFirst();
+
+    if (matchHasH2H) {
+      res.status(400).json({ error: 'Cannot delete match that has H2H matchups' });
+      return;
+    }
+
+    // Delete match
+    await db.deleteFrom('matches')
+      .where('id', '=', matchId)
+      .execute();
+
+    console.log('Match deleted successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting match:', error);
+    res.status(500).json({ error: 'Failed to delete match' });
   }
 });
 
@@ -715,13 +921,14 @@ async function calculateUserScoreForMatch(userId: number, matchId: number): Prom
   }
 }
 
-// Get all users and teams (admin only)
+// Get all users and teams (admin only) with search
 app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => {
   try {
-    console.log('Admin fetching all users and teams');
+    const { search } = req.query;
+    console.log('Admin fetching all users and teams with search:', search);
     
     // Get all users with their team info
-    const usersWithTeams = await db.selectFrom('users')
+    let userQuery = db.selectFrom('users')
       .leftJoin('user_teams', 'users.id', 'user_teams.user_id')
       .leftJoin('players', 'user_teams.player_id', 'players.id')
       .select([
@@ -736,8 +943,16 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
         'players.total_points as player_points',
         'user_teams.is_captain',
         'user_teams.purchase_price'
-      ])
-      .execute();
+      ]);
+    
+    if (search && typeof search === 'string') {
+      userQuery = userQuery.where((eb) => eb.or([
+        eb('users.username', 'like', `%${search}%`),
+        eb('users.email', 'like', `%${search}%`)
+      ]));
+    }
+    
+    const usersWithTeams = await userQuery.execute();
     
     // Group by user
     const usersMap = new Map();

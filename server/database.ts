@@ -22,7 +22,6 @@ export interface DatabaseSchema {
   players: {
     id: number;
     name: string;
-    team: string;
     position: string;
     base_price: number;
     current_price: number;

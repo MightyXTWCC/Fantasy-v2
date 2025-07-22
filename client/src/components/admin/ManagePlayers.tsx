@@ -6,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
 
-export function PlayersList() {
-  const { user, token } = useAuth();
+export function ManagePlayers() {
+  const { token } = useAuth();
   const [players, setPlayers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -33,40 +33,27 @@ export function PlayersList() {
     fetchPlayers();
   }, [searchQuery]);
 
-  const handleBuyPlayer = async function(playerId: number) {
-    if (!token) return;
+  const handleDeletePlayer = async function(playerId: number, playerName: string) {
+    if (!confirm(`Are you sure you want to delete ${playerName}? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
-      const response = await fetch('/api/buy-player', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ playerId })
+      const response = await fetch(`/api/players/${playerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (response.ok) {
-        const result = await response.json();
-        toast.success(result.message, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        toast.success('Player deleted successfully!');
         fetchPlayers();
-        window.location.reload(); // Refresh to update budget
       } else {
         const error = await response.json();
-        toast.error(error.error, {
-          duration: 4000,
-          position: 'top-center',
-        });
+        toast.error(error.error || 'Failed to delete player');
       }
     } catch (error) {
-      console.error('Error buying player:', error);
-      toast.error('Failed to buy player', {
-        duration: 4000,
-        position: 'top-center',
-      });
+      console.error('Error deleting player:', error);
+      toast.error('Failed to delete player');
     }
   };
 
@@ -77,21 +64,13 @@ export function PlayersList() {
   return (
     <div>
       <Toaster />
-      <div className="mb-6 space-y-4">
-        <div className="p-4 bg-muted rounded-lg">
-          <p className="text-lg font-semibold">
-            Budget: ${user?.budget?.toLocaleString() || 0}
-          </p>
-        </div>
-        
-        <div>
-          <Input
-            placeholder="Search players..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-sm"
-          />
-        </div>
+      <div className="mb-6">
+        <Input
+          placeholder="Search players..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="max-w-sm"
+        />
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -109,11 +88,11 @@ export function PlayersList() {
                 <p><strong>Total Points:</strong> {player.total_points}</p>
                 <p><strong>Matches:</strong> {player.matches_played}</p>
                 <Button 
+                  variant="destructive"
                   className="w-full mt-4"
-                  onClick={() => handleBuyPlayer(player.id)}
-                  disabled={!user || user.budget < player.current_price}
+                  onClick={() => handleDeletePlayer(player.id, player.name)}
                 >
-                  Buy Player
+                  Delete Player
                 </Button>
               </div>
             </CardContent>
