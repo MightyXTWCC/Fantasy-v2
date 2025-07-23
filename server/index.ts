@@ -45,8 +45,8 @@ async function checkLockout(req: express.Request, res: express.Response, next: e
   }
 }
 
-// Calculate points based on stats with position-based bonuses
-function calculatePoints(stats: any, playerPosition: string): number {
+// Calculate points based on stats with position-based bonuses, multipliers, and custom bonus rules
+async function calculatePoints(stats: any, playerPosition: string, roundId: number, playerId: number): Promise<number> {
   let points = 0;
   
   // Batting points
@@ -73,11 +73,61 @@ function calculatePoints(stats: any, playerPosition: string): number {
   points += Math.floor(stumpings * 12 * fieldingMultiplier); // Base 12 points per stumping (keepers only usually)
   points += Math.floor(runOuts * 6 * fieldingMultiplier); // Base 6 points per run out
   
-  // Bonus points
+  // Standard bonus points
   if (stats.runs >= 50) points += 8; // Half century bonus
   if (stats.runs >= 100) points += 16; // Century bonus
   if (stats.wickets >= 3) points += 4; // 3 wicket bonus
   if (stats.wickets >= 5) points += 8; // 5 wicket bonus
+  
+  // Apply custom bonus rules for this round
+  try {
+    const bonusRules = await db.selectFrom('bonus_rules')
+      .selectAll()
+      .where('round_id', '=', roundId)
+      .execute();
+
+    for (const rule of bonusRules) {
+      const targetPositions = JSON.parse(rule.target_positions);
+      const conditions = JSON.parse(rule.conditions);
+      
+      // Check if this rule applies to the player's position
+      if (targetPositions.includes('All') || targetPositions.includes(playerPosition)) {
+        let ruleApplies = true;
+        
+        // Check all conditions
+        if (conditions.min_runs && stats.runs < conditions.min_runs) ruleApplies = false;
+        if (conditions.max_runs && stats.runs > conditions.max_runs) ruleApplies = false;
+        if (conditions.min_wickets && stats.wickets < conditions.min_wickets) ruleApplies = false;
+        if (conditions.max_wickets && stats.wickets > conditions.max_wickets) ruleApplies = false;
+        if (conditions.min_catches && catches < conditions.min_catches) ruleApplies = false;
+        if (conditions.min_sixes && stats.sixes < conditions.min_sixes) ruleApplies = false;
+        if (conditions.min_fours && stats.fours < conditions.min_fours) ruleApplies = false;
+        
+        if (ruleApplies) {
+          points += rule.bonus_points;
+          console.log(`Applied bonus rule "${rule.name}" to player ${playerId}: +${rule.bonus_points} points`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error applying bonus rules:', error);
+  }
+  
+  // Apply round multiplier for this player
+  try {
+    const multiplier = await db.selectFrom('round_multipliers')
+      .select('multiplier')
+      .where('round_id', '=', roundId)
+      .where('player_id', '=', playerId)
+      .executeTakeFirst();
+    
+    if (multiplier) {
+      points = Math.floor(points * multiplier.multiplier);
+      console.log(`Applied multiplier ${multiplier.multiplier}x to player ${playerId}: ${points} points`);
+    }
+  } catch (error) {
+    console.error('Error applying multiplier:', error);
+  }
   
   return Math.max(0, points); // Ensure points don't go negative
 }
@@ -311,11 +361,117 @@ app.put('/api/admin/users/:id', authenticateUser, requireAdmin, async (req, res)
   }
 });
 
-// Get all players (public) with search
+// Admin delete user
+app.delete('/api/admin/users/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    console.log('Admin deleting user:', userId);
+
+    // Don't allow deletion of the current admin user
+    if (userId === req.user.id) {
+      res.status(400).json({ error: 'Cannot delete your own admin account' });
+      return;
+    }
+
+    // Delete user's team first
+    await db.deleteFrom('user_teams')
+      .where('user_id', '=', userId)
+      .execute();
+
+    // Delete user's sessions
+    await db.deleteFrom('user_sessions')
+      .where('user_id', '=', userId)
+      .execute();
+
+    // Delete user
+    await db.deleteFrom('users')
+      .where('id', '=', userId)
+      .execute();
+
+    console.log('User deleted successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Admin manage user team - add player to user's team
+app.post('/api/admin/users/:id/players', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { playerId, isSubstitute } = req.body;
+    console.log(`Admin adding player ${playerId} to user ${userId} team`);
+
+    // Check if user already owns this player
+    const existingOwnership = await db.selectFrom('user_teams')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .where('player_id', '=', playerId)
+      .executeTakeFirst();
+
+    if (existingOwnership) {
+      res.status(400).json({ error: 'User already owns this player' });
+      return;
+    }
+
+    // Get player info
+    const player = await db.selectFrom('players')
+      .selectAll()
+      .where('id', '=', playerId)
+      .executeTakeFirst();
+
+    if (!player) {
+      res.status(404).json({ error: 'Player not found' });
+      return;
+    }
+
+    // Add player to team
+    await db.insertInto('user_teams')
+      .values({
+        user_id: userId,
+        player_id: playerId,
+        purchase_price: player.current_price,
+        is_captain: 0,
+        is_substitute: isSubstitute ? 1 : 0
+      })
+      .execute();
+
+    console.log('Player added to user team successfully');
+    res.json({ success: true, message: `Added ${player.name} to user's team` });
+  } catch (error) {
+    console.error('Error adding player to user team:', error);
+    res.status(500).json({ error: 'Failed to add player to team' });
+  }
+});
+
+// Admin manage user team - remove player from user's team
+app.delete('/api/admin/users/:userId/players/:playerId', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const playerId = parseInt(req.params.playerId);
+    console.log(`Admin removing player ${playerId} from user ${userId} team`);
+
+    // Remove player from team
+    await db.deleteFrom('user_teams')
+      .where('user_id', '=', userId)
+      .where('player_id', '=', playerId)
+      .execute();
+
+    console.log('Player removed from user team successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing player from user team:', error);
+    res.status(500).json({ error: 'Failed to remove player from team' });
+  }
+});
+
+// Get all players (public) with search and team ownership info
 app.get('/api/players', async (req, res) => {
   try {
     const { search } = req.query;
-    console.log('Fetching players with search:', search);
+    const userId = req.user?.id; // Get user ID if authenticated
+    console.log('Fetching players with search:', search, 'for user:', userId);
     
     let query = db.selectFrom('players').selectAll();
     
@@ -324,8 +480,26 @@ app.get('/api/players', async (req, res) => {
     }
     
     const players = await query.execute();
+    
+    // If user is authenticated, check which players they own
+    let userTeam = [];
+    if (userId) {
+      userTeam = await db.selectFrom('user_teams')
+        .select(['player_id'])
+        .where('user_id', '=', userId)
+        .execute();
+    }
+    
+    const ownedPlayerIds = userTeam.map(t => t.player_id);
+    
+    // Add ownership information to players
+    const playersWithOwnership = players.map(player => ({
+      ...player,
+      owned_by_user: ownedPlayerIds.includes(player.id)
+    }));
+    
     console.log(`Found ${players.length} players`);
-    res.json(players);
+    res.json(playersWithOwnership);
   } catch (error) {
     console.error('Error fetching players:', error);
     res.status(500).json({ error: 'Failed to fetch players' });
@@ -356,6 +530,31 @@ app.post('/api/players', authenticateUser, requireAdmin, async (req, res) => {
   }
 });
 
+// Update player price (admin only)
+app.put('/api/players/:id/price', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const playerId = parseInt(req.params.id);
+    const { current_price } = req.body;
+    console.log('Admin updating player price:', playerId, 'to', current_price);
+
+    await db.updateTable('players')
+      .set({ current_price })
+      .where('id', '=', playerId)
+      .execute();
+
+    const updatedPlayer = await db.selectFrom('players')
+      .selectAll()
+      .where('id', '=', playerId)
+      .executeTakeFirst();
+
+    console.log('Player price updated successfully');
+    res.json(updatedPlayer);
+  } catch (error) {
+    console.error('Error updating player price:', error);
+    res.status(500).json({ error: 'Failed to update player price' });
+  }
+});
+
 // Delete player (admin only)
 app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
@@ -375,6 +574,11 @@ app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) 
 
     // Delete player stats first
     await db.deleteFrom('player_stats')
+      .where('player_id', '=', playerId)
+      .execute();
+
+    // Delete round multipliers
+    await db.deleteFrom('round_multipliers')
       .where('player_id', '=', playerId)
       .execute();
 
@@ -537,6 +741,15 @@ app.delete('/api/rounds/:id', authenticateUser, requireAdmin, async (req, res) =
       return;
     }
 
+    // Delete round multipliers and bonus rules
+    await db.deleteFrom('round_multipliers')
+      .where('round_id', '=', roundId)
+      .execute();
+
+    await db.deleteFrom('bonus_rules')
+      .where('round_id', '=', roundId)
+      .execute();
+
     // Delete round
     await db.deleteFrom('rounds')
       .where('id', '=', roundId)
@@ -591,7 +804,150 @@ app.post('/api/start-round/:id', authenticateUser, requireAdmin, async (req, res
   }
 });
 
-// Add player stats for round (admin only)
+// MULTIPLIER MANAGEMENT
+
+// Get round multipliers for a round (admin only)
+app.get('/api/rounds/:id/multipliers', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    console.log('Fetching multipliers for round:', roundId);
+
+    const multipliers = await db.selectFrom('round_multipliers')
+      .leftJoin('players', 'round_multipliers.player_id', 'players.id')
+      .select([
+        'round_multipliers.id',
+        'round_multipliers.player_id',
+        'round_multipliers.multiplier',
+        'players.name as player_name',
+        'players.position as player_position'
+      ])
+      .where('round_id', '=', roundId)
+      .execute();
+
+    res.json(multipliers);
+  } catch (error) {
+    console.error('Error fetching round multipliers:', error);
+    res.status(500).json({ error: 'Failed to fetch multipliers' });
+  }
+});
+
+// Set player multiplier for a round (admin only)
+app.post('/api/rounds/:id/multipliers', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    const { player_id, multiplier } = req.body;
+    console.log('Setting multiplier for round:', roundId, 'player:', player_id, 'multiplier:', multiplier);
+
+    await db.insertInto('round_multipliers')
+      .values({
+        round_id: roundId,
+        player_id,
+        multiplier
+      })
+      .onConflict((oc) => oc.columns(['round_id', 'player_id']).doUpdateSet({ multiplier }))
+      .execute();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error setting multiplier:', error);
+    res.status(500).json({ error: 'Failed to set multiplier' });
+  }
+});
+
+// Delete player multiplier for a round (admin only)
+app.delete('/api/rounds/:roundId/multipliers/:playerId', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const playerId = parseInt(req.params.playerId);
+    console.log('Deleting multiplier for round:', roundId, 'player:', playerId);
+
+    await db.deleteFrom('round_multipliers')
+      .where('round_id', '=', roundId)
+      .where('player_id', '=', playerId)
+      .execute();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting multiplier:', error);
+    res.status(500).json({ error: 'Failed to delete multiplier' });
+  }
+});
+
+// BONUS RULES MANAGEMENT
+
+// Get bonus rules for a round (admin only)
+app.get('/api/rounds/:id/bonus-rules', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    console.log('Fetching bonus rules for round:', roundId);
+
+    const bonusRules = await db.selectFrom('bonus_rules')
+      .selectAll()
+      .where('round_id', '=', roundId)
+      .execute();
+
+    // Parse JSON fields for easier frontend handling
+    const parsedRules = bonusRules.map(rule => ({
+      ...rule,
+      target_positions: JSON.parse(rule.target_positions),
+      conditions: JSON.parse(rule.conditions)
+    }));
+
+    res.json(parsedRules);
+  } catch (error) {
+    console.error('Error fetching bonus rules:', error);
+    res.status(500).json({ error: 'Failed to fetch bonus rules' });
+  }
+});
+
+// Create bonus rule for a round (admin only)
+app.post('/api/rounds/:id/bonus-rules', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.id);
+    const { name, description, bonus_points, target_positions, conditions } = req.body;
+    console.log('Creating bonus rule for round:', roundId);
+
+    const bonusRule = await db.insertInto('bonus_rules')
+      .values({
+        round_id: roundId,
+        name,
+        description,
+        bonus_points,
+        target_positions: JSON.stringify(target_positions),
+        conditions: JSON.stringify(conditions)
+      })
+      .returningAll()
+      .executeTakeFirst();
+
+    res.json({
+      ...bonusRule,
+      target_positions: JSON.parse(bonusRule.target_positions),
+      conditions: JSON.parse(bonusRule.conditions)
+    });
+  } catch (error) {
+    console.error('Error creating bonus rule:', error);
+    res.status(500).json({ error: 'Failed to create bonus rule' });
+  }
+});
+
+// Delete bonus rule (admin only)
+app.delete('/api/bonus-rules/:id', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const ruleId = parseInt(req.params.id);
+    console.log('Deleting bonus rule:', ruleId);
+
+    await db.deleteFrom('bonus_rules')
+      .where('id', '=', ruleId)
+      .execute();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting bonus rule:', error);
+    res.status(500).json({ error: 'Failed to delete bonus rule' });
+  }
+});
+
+// Add player stats for round (admin only) - Updated to use new calculation function
 app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const stats = req.body;
@@ -603,8 +959,8 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
       .where('id', '=', stats.player_id)
       .executeTakeFirst();
     
-    // Calculate points with position-based bonuses
-    const points = calculatePoints(stats, player?.position || '');
+    // Calculate points with position-based bonuses, multipliers, and custom rules
+    const points = await calculatePoints(stats, player?.position || '', stats.round_id, stats.player_id);
     
     // Insert stats
     const playerStats = await db.insertInto('player_stats')
@@ -636,8 +992,7 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
     await db.updateTable('players')
       .set({
         current_round_points: roundPoints,
-        current_price: newPrice,
-        matches_played: existingStats.length
+        current_price: newPrice
       })
       .where('id', '=', stats.player_id)
       .execute();
@@ -693,7 +1048,7 @@ app.get('/api/my-team', authenticateUser, async (req, res) => {
   }
 });
 
-// Buy player with position constraints and lockout check
+// Buy player with position constraints and lockout check - Updated for 2 all-rounders
 app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -736,7 +1091,7 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
       return;
     }
     
-    // Position constraints check for main team (not substitutes)
+    // Position constraints check for main team (not substitutes) - Updated for 2 all-rounders
     if (!isSubstitute) {
       const mainTeam = currentTeam.filter(p => !p.is_substitute);
       const positionCounts = {
@@ -750,7 +1105,7 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
         positionCounts[p.position]++;
       });
       
-      // Check position limits for main team
+      // Check position limits for main team - Updated to require 2 all-rounders
       if (player.position === 'Batsman' && positionCounts['Batsman'] >= 2) {
         res.status(400).json({ error: 'Already have maximum batsmen (2)' });
         return;
@@ -759,8 +1114,8 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
         res.status(400).json({ error: 'Already have maximum bowlers (2)' });
         return;
       }
-      if (player.position === 'All-rounder' && positionCounts['All-rounder'] >= 1) {
-        res.status(400).json({ error: 'Already have maximum all-rounders (1)' });
+      if (player.position === 'All-rounder' && positionCounts['All-rounder'] >= 2) {
+        res.status(400).json({ error: 'Already have maximum all-rounders (2)' });
         return;
       }
       if (player.position === 'Wicket-keeper' && positionCounts['Wicket-keeper'] >= 1) {
@@ -955,7 +1310,7 @@ app.post('/api/substitute-player', authenticateUser, checkLockout, async (req, r
   }
 });
 
-// Get leaderboard (public)
+// Get leaderboard (public) - Updated for 2 all-rounders
 app.get('/api/leaderboard', async (req, res) => {
   try {
     console.log('Fetching leaderboard');
@@ -1209,7 +1564,8 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
         'players.current_round_points as player_current_points',
         'user_teams.is_captain',
         'user_teams.is_substitute',
-        'user_teams.purchase_price'
+        'user_teams.purchase_price',
+        'user_teams.player_id'
       ]);
     
     if (search && typeof search === 'string') {
@@ -1239,6 +1595,7 @@ app.get('/api/admin/users', authenticateUser, requireAdmin, async (req, res) => 
       
       if (row.player_name) {
         usersMap.get(row.id).team.push({
+          player_id: row.player_id,
           name: row.player_name,
           position: row.player_position,
           total_points: row.player_total_points,

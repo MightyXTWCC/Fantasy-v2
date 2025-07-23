@@ -21,7 +21,12 @@ export function PlayersList() {
         params.append('search', searchQuery.trim());
       }
       
-      const response = await fetch(`/api/players?${params}`);
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`/api/players?${params}`, { headers });
       const data = await response.json();
       setPlayers(data);
     } catch (error) {
@@ -33,7 +38,7 @@ export function PlayersList() {
 
   React.useEffect(() => {
     fetchPlayers();
-  }, [searchQuery]);
+  }, [searchQuery, token]);
 
   const handleBuyPlayer = async function(playerId: number, isSubstitute = false) {
     if (!token) return;
@@ -94,40 +99,54 @@ export function PlayersList() {
   const renderPlayerCard = function(player) {
     const currentPoints = player.current_round_points || 0;
     const totalPoints = player.total_points || 0;
+    const isOwned = player.owned_by_user;
 
     return (
-      <Card key={player.id} className="hover:shadow-lg transition-shadow">
+      <Card key={player.id} className={`hover:shadow-lg transition-shadow ${isOwned ? 'ring-2 ring-green-500 bg-green-50 dark:bg-green-900/10' : ''}`}>
         <CardHeader>
           <CardTitle className="flex justify-between items-center">
             <div className="flex items-center space-x-2">
               <PositionIcon position={player.position} className="w-5 h-5" />
               <span className="text-sm">{player.name}</span>
             </div>
-            <Badge variant="secondary">{player.position}</Badge>
+            <div className="flex items-center space-x-2">
+              <Badge variant="secondary">{player.position}</Badge>
+              {isOwned && <Badge variant="default" className="text-xs">OWNED</Badge>}
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             <p><strong>Price:</strong> ${player.current_price.toLocaleString()}</p>
             <p><strong>Round Points:</strong> {currentPoints} <span className="text-muted-foreground">({totalPoints})</span></p>
-            <p><strong>Matches:</strong> {player.matches_played}</p>
-            <div className="space-y-2 mt-4">
-              <Button 
-                className="w-full"
-                onClick={() => handleBuyPlayer(player.id, false)}
-                disabled={!user || user.budget < player.current_price}
-              >
-                Buy as Main Player
-              </Button>
-              <Button 
-                variant="outline"
-                className="w-full"
-                onClick={() => handleBuyPlayer(player.id, true)}
-                disabled={!user || user.budget < player.current_price}
-              >
-                Buy as Substitute
-              </Button>
-            </div>
+            
+            {!isOwned ? (
+              <div className="space-y-2 mt-4">
+                <Button 
+                  className="w-full"
+                  onClick={() => handleBuyPlayer(player.id, false)}
+                  disabled={!user || user.budget < player.current_price}
+                >
+                  Buy as Main Player
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleBuyPlayer(player.id, true)}
+                  disabled={!user || user.budget < player.current_price}
+                >
+                  Buy as Substitute
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <div className="p-2 bg-green-100 dark:bg-green-800/20 rounded text-center">
+                  <span className="text-sm text-green-700 dark:text-green-400 font-medium">
+                    Already in your team
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -153,18 +172,18 @@ export function PlayersList() {
           />
         </div>
 
-        {/* Team Requirements Info */}
+        {/* Team Requirements Info - Updated for 2 all-rounders */}
         <Card>
           <CardContent className="p-4">
             <h3 className="font-semibold mb-2">Team Requirements:</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
               <div>2 Batsmen</div>
               <div>2 Bowlers</div>
-              <div>1 All-rounder</div>
+              <div>2 All-rounders</div>
               <div>1 Wicket-keeper</div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Plus 1 substitute for each position type (total 6 players)
+              Plus 1 substitute for each position type (total 7 players)
             </p>
           </CardContent>
         </Card>

@@ -8,11 +8,13 @@ import { AddStats } from '@/components/admin/AddStats';
 import { ManageUsers } from '@/components/admin/ManageUsers';
 import { H2HManagement } from '@/components/admin/H2HManagement';
 import { CreateH2H } from '@/components/h2h/CreateH2H';
+import { RoundMultipliers } from '@/components/admin/RoundMultipliers';
+import { BonusRules } from '@/components/admin/BonusRules';
 
 export function AdminPanel() {
   return (
     <Tabs defaultValue="create-player" className="w-full">
-      <TabsList className="grid w-full grid-cols-8">
+      <TabsList className="grid w-full grid-cols-10">
         <TabsTrigger value="create-player">Create Player</TabsTrigger>
         <TabsTrigger value="manage-players">Manage Players</TabsTrigger>
         <TabsTrigger value="create-round">Create Round</TabsTrigger>
@@ -21,6 +23,8 @@ export function AdminPanel() {
         <TabsTrigger value="users">Manage Users</TabsTrigger>
         <TabsTrigger value="h2h">H2H Matchups</TabsTrigger>
         <TabsTrigger value="create-h2h">Create H2H</TabsTrigger>
+        <TabsTrigger value="multipliers">Round Multipliers</TabsTrigger>
+        <TabsTrigger value="bonus-rules">Bonus Rules</TabsTrigger>
       </TabsList>
       
       <TabsContent value="create-player">
@@ -53,6 +57,14 @@ export function AdminPanel() {
 
       <TabsContent value="create-h2h">
         <CreateH2H />
+      </TabsContent>
+
+      <TabsContent value="multipliers">
+        <RoundMultipliers />
+      </TabsContent>
+
+      <TabsContent value="bonus-rules">
+        <BonusRules />
       </TabsContent>
     </Tabs>
   );

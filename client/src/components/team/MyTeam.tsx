@@ -163,7 +163,7 @@ export function MyTeam() {
     return sum + points;
   }, 0);
 
-  // Check team composition requirements and organize by position
+  // Check team composition requirements and organize by position - Updated for 2 all-rounders
   const positionCounts = {
     'Batsman': 0,
     'Bowler': 0,
@@ -183,9 +183,10 @@ export function MyTeam() {
     playersByPosition[player.position].push(player);
   });
 
+  // Updated team completion check for 2 all-rounders
   const isTeamComplete = positionCounts['Batsman'] === 2 && 
                         positionCounts['Bowler'] === 2 && 
-                        positionCounts['All-rounder'] === 1 && 
+                        positionCounts['All-rounder'] === 2 && 
                         positionCounts['Wicket-keeper'] === 1;
 
   return (
@@ -216,7 +217,7 @@ export function MyTeam() {
           <CardContent className="p-4">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Players</p>
-              <p className="text-2xl font-bold">{team.length}/6</p>
+              <p className="text-2xl font-bold">{team.length}/7</p>
             </div>
           </CardContent>
         </Card>
@@ -230,7 +231,7 @@ export function MyTeam() {
         </Card>
       </div>
 
-      {/* Team Composition Status */}
+      {/* Team Composition Status - Updated for 2 all-rounders */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Team Composition</CardTitle>
@@ -250,9 +251,9 @@ export function MyTeam() {
               </p>
             </div>
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">All-rounder</p>
-              <p className={`text-lg font-bold ${positionCounts['All-rounder'] === 1 ? 'text-green-600' : 'text-red-600'}`}>
-                {positionCounts['All-rounder']}/1
+              <p className="text-sm text-muted-foreground">All-rounders</p>
+              <p className={`text-lg font-bold ${positionCounts['All-rounder'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['All-rounder']}/2
               </p>
             </div>
             <div className="text-center">
@@ -285,8 +286,8 @@ export function MyTeam() {
               <Card key={position}>
                 <CardHeader>
                   <CardTitle className="flex justify-between items-center">
-                    <span>{position}{position === 'Wicket-keeper' ? '' : position === 'All-rounder' ? '' : 's'}</span>
-                    <Badge variant="secondary">{players.length} / {position === 'Batsman' || position === 'Bowler' ? '2' : '1'}</Badge>
+                    <span>{position}{position === 'Wicket-keeper' ? '' : 's'}</span>
+                    <Badge variant="secondary">{players.length} / {position === 'Batsman' || position === 'Bowler' || position === 'All-rounder' ? '2' : '1'}</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -303,8 +304,8 @@ export function MyTeam() {
                     </div>
                   ) : (
                     <div className="text-center py-8">
-                      <p className="text-muted-foreground">No {position.toLowerCase()}{position === 'Wicket-keeper' ? '' : position === 'All-rounder' ? '' : 's'} in your team</p>
-                      <p className="text-sm text-muted-foreground mt-1">Go to Players page to buy {position === 'Wicket-keeper' ? 'a wicket-keeper' : position === 'All-rounder' ? 'an all-rounder' : position.toLowerCase() + 's'}</p>
+                      <p className="text-muted-foreground">No {position.toLowerCase()}{position === 'Wicket-keeper' ? '' : 's'} in your team</p>
+                      <p className="text-sm text-muted-foreground mt-1">Go to Players page to buy {position === 'Wicket-keeper' ? 'a wicket-keeper' : position.toLowerCase() + 's'}</p>
                     </div>
                   )}
                 </CardContent>
