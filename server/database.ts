@@ -27,7 +27,6 @@ export interface DatabaseSchema {
     current_price: number;
     total_points: number;
     current_round_points: number;
-    matches_played: number;
     created_at: string;
   };
   rounds: {
@@ -76,6 +75,23 @@ export interface DatabaseSchema {
     user1_score: number;
     user2_score: number;
     winner_id: number;
+    created_at: string;
+  };
+  round_multipliers: {
+    id: number;
+    round_id: number;
+    player_id: number;
+    multiplier: number;
+    created_at: string;
+  };
+  bonus_rules: {
+    id: number;
+    round_id: number;
+    name: string;
+    description: string;
+    bonus_points: number;
+    target_positions: string;
+    conditions: string;
     created_at: string;
   };
 }

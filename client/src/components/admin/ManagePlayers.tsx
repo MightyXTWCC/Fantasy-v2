@@ -2,7 +2,9 @@ import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -11,6 +13,8 @@ export function ManagePlayers() {
   const [players, setPlayers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [editingPlayer, setEditingPlayer] = React.useState(null);
+  const [editPrice, setEditPrice] = React.useState('');
 
   const fetchPlayers = async function() {
     try {
@@ -57,6 +61,39 @@ export function ManagePlayers() {
     }
   };
 
+  const handleEditPrice = function(player) {
+    setEditingPlayer(player);
+    setEditPrice(player.current_price.toString());
+  };
+
+  const handleUpdatePrice = async function() {
+    if (!editingPlayer) return;
+
+    try {
+      const response = await fetch(`/api/players/${editingPlayer.id}/price`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ current_price: parseFloat(editPrice) })
+      });
+
+      if (response.ok) {
+        toast.success('Player price updated successfully!');
+        setEditingPlayer(null);
+        setEditPrice('');
+        fetchPlayers();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to update price');
+      }
+    } catch (error) {
+      console.error('Error updating price:', error);
+      toast.error('Failed to update price');
+    }
+  };
+
   if (loading) {
     return <div>Loading players...</div>;
   }
@@ -84,16 +121,51 @@ export function ManagePlayers() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <p><strong>Price:</strong> ${player.current_price.toLocaleString()}</p>
+                <div className="flex justify-between items-center">
+                  <span>Price:</span>
+                  <span className="font-bold">${player.current_price.toLocaleString()}</span>
+                </div>
                 <p><strong>Total Points:</strong> {player.total_points}</p>
-                <p><strong>Matches:</strong> {player.matches_played}</p>
-                <Button 
-                  variant="destructive"
-                  className="w-full mt-4"
-                  onClick={() => handleDeletePlayer(player.id, player.name)}
-                >
-                  Delete Player
-                </Button>
+                <p><strong>Current Round:</strong> {player.current_round_points}</p>
+                
+                <div className="flex space-x-2 mt-4">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" onClick={() => handleEditPrice(player)}>
+                        Edit Price
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Edit Price: {editingPlayer?.name}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="edit-price">Current Price</Label>
+                          <Input
+                            id="edit-price"
+                            type="number"
+                            value={editPrice}
+                            onChange={(e) => setEditPrice(e.target.value)}
+                            placeholder="Enter new price"
+                          />
+                        </div>
+                        
+                        <Button onClick={handleUpdatePrice} className="w-full">
+                          Update Price
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Button 
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeletePlayer(player.id, player.name)}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
