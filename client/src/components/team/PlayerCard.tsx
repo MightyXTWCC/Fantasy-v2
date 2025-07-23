@@ -21,8 +21,8 @@ export function PlayerCard({
   const totalPoints = player.total_points || 0;
 
   return (
-    <Card className="w-28 h-36 relative mt-[18px]">
-      <CardContent className="p-1 h-full flex flex-col mt-[0px] pb-[233333px] ml-[0px] mb-[112345678px] mr-[0px] pr-[4px]">
+    <Card className="w-full h-auto relative">
+      <CardContent className="p-4 h-full flex flex-col">
         {/* Captain Badge */}
         {player.is_captain && (
           <Badge
@@ -34,44 +34,49 @@ export function PlayerCard({
         )}
 
         {/* Position Icon */}
-        <div className="flex justify-center mb-1">
-          <PositionIcon position={player.position} className="w-4 h-4" />
+        <div className="flex justify-center mb-2">
+          <PositionIcon position={player.position} className="w-6 h-6" />
         </div>
 
         {/* Player Name */}
-        <div className="text-center mb-1">
-          <p className="text-xs font-medium truncate" title={player.name}>
+        <div className="text-center mb-2">
+          <p className="text-sm font-medium" title={player.name}>
             {player.name}
           </p>
         </div>
 
-        {/* Points */}
-        <div className="text-center mb-2">
-          <p className="text-xs text-muted-foreground">
-            {currentPoints}
-            {player.is_captain && " (x2)"}
-          </p>
-          <p className="text-xs text-muted-foreground opacity-75">
-            ({totalPoints})
-          </p>
-        </div>
+        {/* Points - only show if player has points */}
+        {(currentPoints > 0 || totalPoints > 0) && (
+          <div className="text-center mb-3">
+            {currentPoints > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Round: {currentPoints}{player.is_captain && " (x2)"}
+              </p>
+            )}
+            {totalPoints > 0 && (
+              <p className="text-xs text-muted-foreground opacity-75">
+                Total: {totalPoints}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         {showActions && (
-          <div className="mt-auto space-y-1">
+          <div className="mt-auto space-y-2">
             <Button
               variant="outline"
               size="sm"
-              className="w-full text-xs h-5"
+              className="w-full text-xs"
               onClick={() => onSetCaptain(player.player_id)}
               disabled={player.is_captain}
             >
-              {player.is_captain ? "Captain" : "Captain"}
+              {player.is_captain ? "Captain" : "Set Captain"}
             </Button>
             <Button
               variant="destructive"
               size="sm"
-              className="w-full text-xs h-5"
+              className="w-full text-xs"
               onClick={() => onSellPlayer(player.player_id)}
             >
               Sell

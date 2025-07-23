@@ -4,12 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useMatchesData } from '@/hooks/useMatchesData';
+import { useRoundsData } from '@/hooks/useRoundsData';
 import { useAuth } from '@/hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
 
 export function CreateH2H() {
-  const { matches } = useMatchesData();
+  const { rounds } = useRoundsData();
   const { token, user } = useAuth();
   const [users, setUsers] = React.useState([]);
   
@@ -17,7 +17,7 @@ export function CreateH2H() {
     name: '',
     user1Username: '',
     user2Username: '',
-    matchId: ''
+    roundId: ''
   });
 
   React.useEffect(() => {
@@ -52,12 +52,12 @@ export function CreateH2H() {
         },
         body: JSON.stringify({
           ...formData,
-          matchId: parseInt(formData.matchId)
+          roundId: parseInt(formData.roundId)
         })
       });
       
       if (response.ok) {
-        setFormData({ name: '', user1Username: '', user2Username: '', matchId: '' });
+        setFormData({ name: '', user1Username: '', user2Username: '', roundId: '' });
         toast.success('Head-to-head matchup created successfully!', {
           duration: 4000,
           position: 'top-center',
@@ -144,15 +144,15 @@ export function CreateH2H() {
             </div>
             
             <div>
-              <Label>Match</Label>
-              <Select value={formData.matchId} onValueChange={(value) => setFormData({ ...formData, matchId: value })}>
+              <Label>Round</Label>
+              <Select value={formData.roundId} onValueChange={(value) => setFormData({ ...formData, roundId: value })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select match" />
+                  <SelectValue placeholder="Select round" />
                 </SelectTrigger>
                 <SelectContent>
-                  {matches.map((match) => (
-                    <SelectItem key={match.id} value={match.id.toString()}>
-                      {match.match_name} - {new Date(match.date).toLocaleDateString()}
+                  {rounds.map((round) => (
+                    <SelectItem key={round.id} value={round.id.toString()}>
+                      {round.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

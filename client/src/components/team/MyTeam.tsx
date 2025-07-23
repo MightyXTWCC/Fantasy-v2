@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTeamData } from '@/hooks/useTeamData';
 import { useUserData } from '@/hooks/useUserData';
 import { useAuth } from '@/hooks/useAuth';
-import { CricketPitchView } from '@/components/team/CricketPitchView';
+import { PlayerCard } from '@/components/team/PlayerCard';
 import { SubstituteBench } from '@/components/team/SubstituteBench';
 import { RoundStatus } from '@/components/rounds/RoundStatus';
 import toast, { Toaster } from 'react-hot-toast';
@@ -163,7 +163,7 @@ export function MyTeam() {
     return sum + points;
   }, 0);
 
-  // Check team composition requirements
+  // Check team composition requirements and organize by position
   const positionCounts = {
     'Batsman': 0,
     'Bowler': 0,
@@ -171,8 +171,16 @@ export function MyTeam() {
     'Wicket-keeper': 0
   };
 
+  const playersByPosition = {
+    'Wicket-keeper': [],
+    'Batsman': [],
+    'All-rounder': [],
+    'Bowler': []
+  };
+
   mainTeam.forEach(player => {
     positionCounts[player.position]++;
+    playersByPosition[player.position].push(player);
   });
 
   const isTeamComplete = positionCounts['Batsman'] === 2 && 
@@ -271,12 +279,38 @@ export function MyTeam() {
         </Card>
       ) : (
         <>
-          {/* Cricket Pitch Visualization */}
-          <CricketPitchView 
-            team={mainTeam} 
-            onSetCaptain={handleSetCaptain}
-            onSellPlayer={handleSellPlayer}
-          />
+          {/* Main Team by Position */}
+          <div className="space-y-6 mb-8">
+            {Object.entries(playersByPosition).map(([position, players]) => (
+              <Card key={position}>
+                <CardHeader>
+                  <CardTitle className="flex justify-between items-center">
+                    <span>{position}{position === 'Wicket-keeper' ? '' : position === 'All-rounder' ? '' : 's'}</span>
+                    <Badge variant="secondary">{players.length} / {position === 'Batsman' || position === 'Bowler' ? '2' : '1'}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {players.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                      {players.map((player) => (
+                        <PlayerCard
+                          key={player.player_id}
+                          player={player}
+                          onSetCaptain={handleSetCaptain}
+                          onSellPlayer={handleSellPlayer}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">No {position.toLowerCase()}{position === 'Wicket-keeper' ? '' : position === 'All-rounder' ? '' : 's'} in your team</p>
+                      <p className="text-sm text-muted-foreground mt-1">Go to Players page to buy {position === 'Wicket-keeper' ? 'a wicket-keeper' : position === 'All-rounder' ? 'an all-rounder' : position.toLowerCase() + 's'}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
           
           {/* Substitutes Bench */}
           {substitutes.length > 0 && (

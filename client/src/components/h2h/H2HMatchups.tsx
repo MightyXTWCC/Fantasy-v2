@@ -27,8 +27,8 @@ export function H2HMatchups() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <p><strong>Match:</strong> {matchup.match_name}</p>
-              <p><strong>Date:</strong> {new Date(matchup.match_date).toLocaleDateString()}</p>
+              <p><strong>Round:</strong> {matchup.round_name}</p>
+              <p><strong>Created:</strong> {new Date(matchup.created_at).toLocaleDateString()}</p>
               
               <div className="mt-4 p-4 bg-muted rounded-lg">
                 <div className="flex justify-between items-center">

@@ -5,17 +5,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
+import { useRoundsData } from '@/hooks/useRoundsData';
+import toast, { Toaster } from 'react-hot-toast';
 
 export function AddStats() {
   const { token } = useAuth();
+  const { rounds } = useRoundsData();
   const [players, setPlayers] = React.useState([]);
-  const [matches, setMatches] = React.useState([]);
   const [playerSearch, setPlayerSearch] = React.useState('');
-  const [matchSearch, setMatchSearch] = React.useState('');
   
   const [formData, setFormData] = React.useState({
     player_id: '',
-    match_id: '',
+    round_id: '',
     runs: 0,
     balls_faced: 0,
     fours: 0,
@@ -46,24 +47,6 @@ export function AddStats() {
     fetchPlayers();
   }, [playerSearch]);
 
-  React.useEffect(() => {
-    const fetchMatches = async function() {
-      try {
-        const params = new URLSearchParams();
-        if (matchSearch.trim()) {
-          params.append('search', matchSearch.trim());
-        }
-        const response = await fetch(`/api/matches?${params}`);
-        const data = await response.json();
-        setMatches(data);
-      } catch (error) {
-        console.error('Error fetching matches:', error);
-      }
-    };
-
-    fetchMatches();
-  }, [matchSearch]);
-
   const handleSubmit = async function(e: React.FormEvent) {
     e.preventDefault();
     
@@ -79,14 +62,14 @@ export function AddStats() {
         body: JSON.stringify({
           ...formData,
           player_id: parseInt(formData.player_id),
-          match_id: parseInt(formData.match_id)
+          round_id: parseInt(formData.round_id)
         })
       });
       
       if (response.ok) {
         setFormData({
           player_id: '',
-          match_id: '',
+          round_id: '',
           runs: 0,
           balls_faced: 0,
           fours: 0,
@@ -98,37 +81,69 @@ export function AddStats() {
           stumpings: 0,
           run_outs: 0
         });
-        alert('Player stats added successfully!');
+        toast.success('Player stats added successfully!', {
+          duration: 4000,
+          position: 'top-center',
+        });
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to add stats', {
+          duration: 4000,
+          position: 'top-center',
+        });
       }
     } catch (error) {
       console.error('Error adding stats:', error);
+      toast.error('Failed to add stats', {
+        duration: 4000,
+        position: 'top-center',
+      });
     }
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add Player Stats</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Player</Label>
-              <div className="space-y-2">
-                <Input
-                  placeholder="Search players..."
-                  value={playerSearch}
-                  onChange={(e) => setPlayerSearch(e.target.value)}
-                />
-                <Select value={formData.player_id} onValueChange={(value) => setFormData({ ...formData, player_id: value })}>
+    <div>
+      <Toaster />
+      <Card>
+        <CardHeader>
+          <CardTitle>Add Player Stats</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Player</Label>
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Search players..."
+                    value={playerSearch}
+                    onChange={(e) => setPlayerSearch(e.target.value)}
+                  />
+                  <Select value={formData.player_id} onValueChange={(value) => setFormData({ ...formData, player_id: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select player" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {players.map((player) => (
+                        <SelectItem key={player.id} value={player.id.toString()}>
+                          {player.name} ({player.position})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div>
+                <Label>Round</Label>
+                <Select value={formData.round_id} onValueChange={(value) => setFormData({ ...formData, round_id: value })}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select player" />
+                    <SelectValue placeholder="Select round" />
                   </SelectTrigger>
                   <SelectContent>
-                    {players.map((player) => (
-                      <SelectItem key={player.id} value={player.id.toString()}>
-                        {player.name} ({player.position})
+                    {rounds.map((round) => (
+                      <SelectItem key={round.id} value={round.id.toString()}>
+                        {round.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -136,142 +151,119 @@ export function AddStats() {
               </div>
             </div>
             
-            <div>
-              <Label>Match</Label>
-              <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="runs">Runs</Label>
                 <Input
-                  placeholder="Search matches..."
-                  value={matchSearch}
-                  onChange={(e) => setMatchSearch(e.target.value)}
+                  id="runs"
+                  type="number"
+                  value={formData.runs}
+                  onChange={(e) => setFormData({ ...formData, runs: parseInt(e.target.value) || 0 })}
                 />
-                <Select value={formData.match_id} onValueChange={(value) => setFormData({ ...formData, match_id: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select match" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {matches.map((match) => (
-                      <SelectItem key={match.id} value={match.id.toString()}>
-                        {match.match_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="balls_faced">Balls Faced</Label>
+                <Input
+                  id="balls_faced"
+                  type="number"
+                  value={formData.balls_faced}
+                  onChange={(e) => setFormData({ ...formData, balls_faced: parseInt(e.target.value) || 0 })}
+                />
               </div>
             </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="runs">Runs</Label>
-              <Input
-                id="runs"
-                type="number"
-                value={formData.runs}
-                onChange={(e) => setFormData({ ...formData, runs: parseInt(e.target.value) || 0 })}
-              />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="fours">Fours</Label>
+                <Input
+                  id="fours"
+                  type="number"
+                  value={formData.fours}
+                  onChange={(e) => setFormData({ ...formData, fours: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="sixes">Sixes</Label>
+                <Input
+                  id="sixes"
+                  type="number"
+                  value={formData.sixes}
+                  onChange={(e) => setFormData({ ...formData, sixes: parseInt(e.target.value) || 0 })}
+                />
+              </div>
             </div>
             
-            <div>
-              <Label htmlFor="balls_faced">Balls Faced</Label>
-              <Input
-                id="balls_faced"
-                type="number"
-                value={formData.balls_faced}
-                onChange={(e) => setFormData({ ...formData, balls_faced: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="fours">Fours</Label>
-              <Input
-                id="fours"
-                type="number"
-                value={formData.fours}
-                onChange={(e) => setFormData({ ...formData, fours: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="sixes">Sixes</Label>
-              <Input
-                id="sixes"
-                type="number"
-                value={formData.sixes}
-                onChange={(e) => setFormData({ ...formData, sixes: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="wickets">Wickets</Label>
-              <Input
-                id="wickets"
-                type="number"
-                value={formData.wickets}
-                onChange={(e) => setFormData({ ...formData, wickets: parseInt(e.target.value) || 0 })}
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="wickets">Wickets</Label>
+                <Input
+                  id="wickets"
+                  type="number"
+                  value={formData.wickets}
+                  onChange={(e) => setFormData({ ...formData, wickets: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="overs_bowled">Overs Bowled</Label>
+                <Input
+                  id="overs_bowled"
+                  type="number"
+                  step="0.1"
+                  value={formData.overs_bowled}
+                  onChange={(e) => setFormData({ ...formData, overs_bowled: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="runs_conceded">Runs Conceded</Label>
+                <Input
+                  id="runs_conceded"
+                  type="number"
+                  value={formData.runs_conceded}
+                  onChange={(e) => setFormData({ ...formData, runs_conceded: parseInt(e.target.value) || 0 })}
+                />
+              </div>
             </div>
             
-            <div>
-              <Label htmlFor="overs_bowled">Overs Bowled</Label>
-              <Input
-                id="overs_bowled"
-                type="number"
-                step="0.1"
-                value={formData.overs_bowled}
-                onChange={(e) => setFormData({ ...formData, overs_bowled: parseFloat(e.target.value) || 0 })}
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="catches">Catches</Label>
+                <Input
+                  id="catches"
+                  type="number"
+                  value={formData.catches}
+                  onChange={(e) => setFormData({ ...formData, catches: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="stumpings">Stumpings</Label>
+                <Input
+                  id="stumpings"
+                  type="number"
+                  value={formData.stumpings}
+                  onChange={(e) => setFormData({ ...formData, stumpings: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="run_outs">Run Outs</Label>
+                <Input
+                  id="run_outs"
+                  type="number"
+                  value={formData.run_outs}
+                  onChange={(e) => setFormData({ ...formData, run_outs: parseInt(e.target.value) || 0 })}
+                />
+              </div>
             </div>
             
-            <div>
-              <Label htmlFor="runs_conceded">Runs Conceded</Label>
-              <Input
-                id="runs_conceded"
-                type="number"
-                value={formData.runs_conceded}
-                onChange={(e) => setFormData({ ...formData, runs_conceded: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="catches">Catches</Label>
-              <Input
-                id="catches"
-                type="number"
-                value={formData.catches}
-                onChange={(e) => setFormData({ ...formData, catches: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="stumpings">Stumpings</Label>
-              <Input
-                id="stumpings"
-                type="number"
-                value={formData.stumpings}
-                onChange={(e) => setFormData({ ...formData, stumpings: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="run_outs">Run Outs</Label>
-              <Input
-                id="run_outs"
-                type="number"
-                value={formData.run_outs}
-                onChange={(e) => setFormData({ ...formData, run_outs: parseInt(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
-          
-          <Button type="submit" className="w-full">Add Stats</Button>
-        </form>
-      </CardContent>
-    </Card>
+            <Button type="submit" className="w-full">Add Stats</Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

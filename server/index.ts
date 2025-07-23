@@ -550,19 +550,27 @@ app.delete('/api/rounds/:id', authenticateUser, requireAdmin, async (req, res) =
   }
 });
 
-// Start new round (admin only) - resets current round points
+// Start new round (admin only) - FIXED: Properly moves current round points to total
 app.post('/api/start-round/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const roundId = parseInt(req.params.id);
     console.log('Starting new round:', roundId);
 
-    // Add current round points to total points for all players
-    await db.updateTable('players')
-      .set((eb) => ({ 
-        total_points: eb('total_points', '+', eb.ref('current_round_points')),
-        current_round_points: 0
-      }))
+    // Move current round points to total points for all players
+    const players = await db.selectFrom('players')
+      .selectAll()
+      .where('current_round_points', '>', 0)
       .execute();
+
+    for (const player of players) {
+      await db.updateTable('players')
+        .set({ 
+          total_points: player.total_points + player.current_round_points,
+          current_round_points: 0
+        })
+        .where('id', '=', player.id)
+        .execute();
+    }
 
     // Set all rounds to inactive
     await db.updateTable('rounds')
@@ -575,7 +583,7 @@ app.post('/api/start-round/:id', authenticateUser, requireAdmin, async (req, res
       .where('id', '=', roundId)
       .execute();
 
-    console.log('New round started successfully');
+    console.log('New round started successfully - moved current points to total');
     res.json({ success: true });
   } catch (error) {
     console.error('Error starting new round:', error);
@@ -607,7 +615,7 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
       .returningAll()
       .executeTakeFirst();
     
-    // Update player current round points
+    // Update player current round points (sum all stats for this round)
     const existingStats = await db.selectFrom('player_stats')
       .select(['round_points'])
       .where('player_id', '=', stats.player_id)
@@ -617,7 +625,13 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
     const roundPoints = existingStats.reduce((sum, stat) => sum + stat.round_points, 0);
     
     // Update player current price based on performance
-    const newPrice = Math.max(50000, 100000 + ((player.total_points + roundPoints) * 1000));
+    const currentPlayer = await db.selectFrom('players')
+      .selectAll()
+      .where('id', '=', stats.player_id)
+      .executeTakeFirst();
+    
+    const totalAllTimePoints = currentPlayer.total_points + roundPoints;
+    const newPrice = Math.max(50000, 100000 + (totalAllTimePoints * 1000));
     
     await db.updateTable('players')
       .set({
