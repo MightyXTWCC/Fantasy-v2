@@ -45,6 +45,45 @@ async function checkLockout(req: express.Request, res: express.Response, next: e
   }
 }
 
+// Market Management - Update prices based on ownership demand
+async function updateMarketPrices() {
+  try {
+    const players = await db.selectFrom('players').selectAll().execute();
+    
+    for (const player of players) {
+      // Count how many users own this player
+      const ownershipCount = await db.selectFrom('user_teams')
+        .select(({ fn }) => [fn.count('id').as('count')])
+        .where('player_id', '=', player.id)
+        .executeTakeFirst();
+      
+      const owners = ownershipCount?.count || 0;
+      
+      // Market demand multiplier (increases price if many people own the player)
+      let marketMultiplier = 1;
+      if (owners >= 5) marketMultiplier = 1.5; // 50% increase if 5+ owners
+      else if (owners >= 3) marketMultiplier = 1.3; // 30% increase if 3+ owners
+      else if (owners >= 2) marketMultiplier = 1.15; // 15% increase if 2+ owners
+      
+      // Performance-based pricing
+      const totalAllTimePoints = player.total_points + player.current_round_points;
+      const performancePrice = Math.max(50000, 100000 + (totalAllTimePoints * 1000));
+      
+      // Combine market demand with performance
+      const newPrice = Math.floor(performancePrice * marketMultiplier);
+      
+      await db.updateTable('players')
+        .set({ current_price: newPrice })
+        .where('id', '=', player.id)
+        .execute();
+    }
+    
+    console.log('Market prices updated based on ownership and performance');
+  } catch (error) {
+    console.error('Error updating market prices:', error);
+  }
+}
+
 // Calculate points based on stats with position-based bonuses, multipliers, and custom bonus rules
 async function calculatePoints(stats: any, playerPosition: string, roundId: number, playerId: number): Promise<number> {
   let points = 0;
@@ -466,17 +505,31 @@ app.delete('/api/admin/users/:userId/players/:playerId', authenticateUser, requi
   }
 });
 
-// Get all players (public) with search and team ownership info
+// Get all players (public) with search, team ownership info, and sorting
 app.get('/api/players', async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search, sortBy } = req.query;
     const userId = req.user?.id; // Get user ID if authenticated
-    console.log('Fetching players with search:', search, 'for user:', userId);
+    console.log('Fetching players with search:', search, 'sort:', sortBy, 'for user:', userId);
     
     let query = db.selectFrom('players').selectAll();
     
     if (search && typeof search === 'string') {
       query = query.where('name', 'like', `%${search}%`);
+    }
+    
+    // Add sorting
+    if (sortBy === 'price-low') {
+      query = query.orderBy('current_price', 'asc');
+    } else if (sortBy === 'price-high') {
+      query = query.orderBy('current_price', 'desc');
+    } else if (sortBy === 'points') {
+      query = query.orderBy('total_points', 'desc');
+    } else if (sortBy === 'name') {
+      query = query.orderBy('name', 'asc');
+    } else {
+      // Default sorting by name
+      query = query.orderBy('name', 'asc');
     }
     
     const players = await query.execute();
@@ -555,24 +608,61 @@ app.put('/api/players/:id/price', authenticateUser, requireAdmin, async (req, re
   }
 });
 
-// Delete player (admin only)
+// Update player scores manually (admin only)
+app.put('/api/admin/players/:id/scores', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const playerId = parseInt(req.params.id);
+    const { total_points, current_round_points } = req.body;
+    console.log('Admin updating player scores:', playerId, { total_points, current_round_points });
+
+    await db.updateTable('players')
+      .set({ 
+        total_points: total_points !== undefined ? total_points : undefined,
+        current_round_points: current_round_points !== undefined ? current_round_points : undefined
+      })
+      .where('id', '=', playerId)
+      .execute();
+
+    const updatedPlayer = await db.selectFrom('players')
+      .selectAll()
+      .where('id', '=', playerId)
+      .executeTakeFirst();
+
+    // Update market prices after manual score adjustment
+    await updateMarketPrices();
+
+    console.log('Player scores updated successfully');
+    res.json(updatedPlayer);
+  } catch (error) {
+    console.error('Error updating player scores:', error);
+    res.status(500).json({ error: 'Failed to update player scores' });
+  }
+});
+
+// Run market management update (admin only)
+app.post('/api/admin/market-management', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    console.log('Admin running market management update');
+    await updateMarketPrices();
+    res.json({ success: true, message: 'Market prices updated successfully' });
+  } catch (error) {
+    console.error('Error running market management:', error);
+    res.status(500).json({ error: 'Failed to update market prices' });
+  }
+});
+
+// Delete player (admin only) - Now allows deletion even if owned by users
 app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const playerId = parseInt(req.params.id);
     console.log('Admin deleting player:', playerId);
 
-    // Check if player exists in any user teams
-    const playerInTeams = await db.selectFrom('user_teams')
-      .selectAll()
+    // Delete player from all user teams first
+    await db.deleteFrom('user_teams')
       .where('player_id', '=', playerId)
-      .executeTakeFirst();
+      .execute();
 
-    if (playerInTeams) {
-      res.status(400).json({ error: 'Cannot delete player who is owned by users' });
-      return;
-    }
-
-    // Delete player stats first
+    // Delete player stats
     await db.deleteFrom('player_stats')
       .where('player_id', '=', playerId)
       .execute();
@@ -587,11 +677,36 @@ app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) 
       .where('id', '=', playerId)
       .execute();
 
-    console.log('Player deleted successfully');
+    console.log('Player deleted successfully (removed from all teams)');
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting player:', error);
     res.status(500).json({ error: 'Failed to delete player' });
+  }
+});
+
+// Delete all players (admin only) - Start fresh
+app.delete('/api/admin/players/all', authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    console.log('Admin deleting all players');
+
+    // Delete all user teams
+    await db.deleteFrom('user_teams').execute();
+
+    // Delete all player stats
+    await db.deleteFrom('player_stats').execute();
+
+    // Delete all round multipliers
+    await db.deleteFrom('round_multipliers').execute();
+
+    // Delete all players
+    await db.deleteFrom('players').execute();
+
+    console.log('All players deleted successfully');
+    res.json({ success: true, message: 'All players deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting all players:', error);
+    res.status(500).json({ error: 'Failed to delete all players' });
   }
 });
 
@@ -796,6 +911,9 @@ app.post('/api/start-round/:id', authenticateUser, requireAdmin, async (req, res
       .where('id', '=', roundId)
       .execute();
 
+    // Update market prices after round transition
+    await updateMarketPrices();
+
     console.log('New round started successfully - moved current points to total');
     res.json({ success: true });
   } catch (error) {
@@ -947,7 +1065,7 @@ app.delete('/api/bonus-rules/:id', authenticateUser, requireAdmin, async (req, r
   }
 });
 
-// Add player stats for round (admin only) - Updated to use new calculation function
+// Add player stats for round (admin only) - Updated to use new calculation function and update market prices
 app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const stats = req.body;
@@ -980,22 +1098,15 @@ app.post('/api/player-stats', authenticateUser, requireAdmin, async (req, res) =
     
     const roundPoints = existingStats.reduce((sum, stat) => sum + stat.round_points, 0);
     
-    // Update player current price based on performance
-    const currentPlayer = await db.selectFrom('players')
-      .selectAll()
-      .where('id', '=', stats.player_id)
-      .executeTakeFirst();
-    
-    const totalAllTimePoints = currentPlayer.total_points + roundPoints;
-    const newPrice = Math.max(50000, 100000 + (totalAllTimePoints * 1000));
-    
     await db.updateTable('players')
       .set({
-        current_round_points: roundPoints,
-        current_price: newPrice
+        current_round_points: roundPoints
       })
       .where('id', '=', stats.player_id)
       .execute();
+
+    // Update market prices after stats are added
+    await updateMarketPrices();
 
     // Update H2H matchup scores
     await updateH2HScores(stats.round_id);
@@ -1048,7 +1159,7 @@ app.get('/api/my-team', authenticateUser, async (req, res) => {
   }
 });
 
-// Buy player with position constraints and lockout check - Updated for 2 all-rounders
+// Buy player with position constraints and lockout check - Updated for 2 all-rounders, with market price update
 app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1062,9 +1173,9 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
       .where('user_id', '=', userId)
       .execute();
     
-    // Check if user already has 6 players total
-    if (currentTeam.length >= 6) {
-      res.status(400).json({ error: 'Team is full (maximum 6 players)' });
+    // Check if user already has 7 players total (updated for 2 all-rounders)
+    if (currentTeam.length >= 7) {
+      res.status(400).json({ error: 'Team is full (maximum 7 players)' });
       return;
     }
     
@@ -1140,6 +1251,9 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
       .set({ budget: req.user.budget - player.current_price })
       .where('id', '=', userId)
       .execute();
+  
+    // Update market prices after purchase
+    await updateMarketPrices();
     
     console.log('Player purchased successfully');
     res.json({ 
@@ -1157,7 +1271,7 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
   }
 });
 
-// Sell player with lockout check
+// Sell player with lockout check - Updated with market price update
 app.post('/api/sell-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1198,6 +1312,9 @@ app.post('/api/sell-player', authenticateUser, checkLockout, async (req, res) =>
       .set({ budget: req.user.budget + player.current_price })
       .where('id', '=', userId)
       .execute();
+
+    // Update market prices after sale
+    await updateMarketPrices();
     
     console.log('Player sold successfully');
     res.json({ 

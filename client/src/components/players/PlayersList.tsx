@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PositionIcon } from '@/components/ui/position-icon';
 import { useAuth } from '@/hooks/useAuth';
 import toast, { Toaster } from 'react-hot-toast';
@@ -13,12 +14,16 @@ export function PlayersList() {
   const [players, setPlayers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [sortBy, setSortBy] = React.useState('name');
 
   const fetchPlayers = async function() {
     try {
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
+      }
+      if (sortBy) {
+        params.append('sortBy', sortBy);
       }
       
       const headers: any = { 'Content-Type': 'application/json' };
@@ -38,7 +43,7 @@ export function PlayersList() {
 
   React.useEffect(() => {
     fetchPlayers();
-  }, [searchQuery, token]);
+  }, [searchQuery, sortBy, token]);
 
   const handleBuyPlayer = async function(playerId: number, isSubstitute = false) {
     if (!token) return;
@@ -163,13 +168,25 @@ export function PlayersList() {
           </p>
         </div>
         
-        <div>
+        <div className="flex flex-col sm:flex-row gap-4">
           <Input
             placeholder="Search players..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="max-w-sm"
           />
+          
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="max-w-sm">
+              <SelectValue placeholder="Sort by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name (A-Z)</SelectItem>
+              <SelectItem value="price-low">Price (Low to High)</SelectItem>
+              <SelectItem value="price-high">Price (High to Low)</SelectItem>
+              <SelectItem value="points">Total Points</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Team Requirements Info - Updated for 2 all-rounders */}
