@@ -65,40 +65,6 @@ export function ManagePlayers() {
     }
   };
 
-  const handleDeleteAllPlayers = async function() {
-    if (!confirm('Are you sure you want to delete ALL players? This will remove all players from all teams and reset the entire player database. This action cannot be undone.')) {
-      return;
-    }
-    
-    if (!confirm('This is your final warning. ALL PLAYERS WILL BE DELETED. Type "DELETE ALL" in the next prompt to confirm.')) {
-      return;
-    }
-    
-    const confirmation = prompt('Type "DELETE ALL" to confirm:');
-    if (confirmation !== 'DELETE ALL') {
-      toast.error('Deletion cancelled - confirmation text did not match');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/admin/players/all', {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        toast.success('All players deleted successfully!');
-        fetchPlayers();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete all players');
-      }
-    } catch (error) {
-      console.error('Error deleting all players:', error);
-      toast.error('Failed to delete all players');
-    }
-  };
-
   const handleRunMarketManagement = async function() {
     try {
       const response = await fetch('/api/admin/market-management', {
@@ -204,21 +170,12 @@ export function ManagePlayers() {
           className="max-w-sm"
         />
         
-        <div className="flex gap-2">
-          <Button 
-            onClick={handleRunMarketManagement}
-            variant="outline"
-          >
-            Update Market Prices
-          </Button>
-          
-          <Button 
-            onClick={handleDeleteAllPlayers}
-            variant="destructive"
-          >
-            Delete All Players
-          </Button>
-        </div>
+        <Button 
+          onClick={handleRunMarketManagement}
+          variant="outline"
+        >
+          Update Market Prices
+        </Button>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -275,4 +232,61 @@ export function ManagePlayers() {
                         <Button variant="outline" size="sm" onClick={() => handleEditScores(player)}>
                           Edit Scores
                         </Button>
-                      
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Edit Scores: {editingPlayer?.name}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="edit-total-points">Total Points</Label>
+                            <Input
+                              id="edit-total-points"
+                              type="number"
+                              value={editScores.total_points}
+                              onChange={(e) => setEditScores({ ...editScores, total_points: parseInt(e.target.value) || 0 })}
+                              placeholder="Enter total points"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="edit-current-points">Current Round Points</Label>
+                            <Input
+                              id="edit-current-points"
+                              type="number"
+                              value={editScores.current_round_points}
+                              onChange={(e) => setEditScores({ ...editScores, current_round_points: parseInt(e.target.value) || 0 })}
+                              placeholder="Enter current round points"
+                            />
+                          </div>
+                          
+                          <Button onClick={handleUpdateScores} className="w-full">
+                            Update Scores
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => handleDeletePlayer(player.id, player.name)}
+                  >
+                    Delete Player
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        
+        {players.length === 0 && (
+          <div className="col-span-full text-center text-muted-foreground py-8">
+            No players found
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
