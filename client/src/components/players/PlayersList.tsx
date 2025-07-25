@@ -126,4 +126,131 @@ export function PlayersList() {
             <p><strong>Round Points:</strong> {currentPoints} <span className="text-muted-foreground">({totalPoints})</span></p>
             
             {!isOwned ? (
-              <div className="space-y-2 
+              <div className="space-y-2">
+                <Button 
+                  onClick={() => handleBuyPlayer(player.id, false)}
+                  className="w-full"
+                  size="sm"
+                >
+                  Buy for Main Team
+                </Button>
+                <Button 
+                  onClick={() => handleBuyPlayer(player.id, true)}
+                  variant="outline"
+                  className="w-full"
+                  size="sm"
+                >
+                  Buy as Substitute
+                </Button>
+              </div>
+            ) : (
+              <Badge variant="outline" className="w-full justify-center">
+                In Your Team
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div>
+      <Toaster />
+      
+      <div className="mb-6 flex flex-col sm:flex-row gap-4">
+        <Input
+          placeholder="Search players..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="max-w-sm"
+        />
+        
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Sort by..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">Name (A-Z)</SelectItem>
+            <SelectItem value="price-low">Price (Low to High)</SelectItem>
+            <SelectItem value="price-high">Price (High to Low)</SelectItem>
+            <SelectItem value="points">Points (High to Low)</SelectItem>
+          </SelectContent>
+        </Select>
+        
+        {user && (
+          <div className="flex items-center">
+            <Badge variant="outline" className="text-sm">
+              Budget: ${user.budget?.toLocaleString()}
+            </Badge>
+          </div>
+        )}
+      </div>
+
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="all">All Players</TabsTrigger>
+          <TabsTrigger value="wicket-keeper">Keepers</TabsTrigger>
+          <TabsTrigger value="batsman">Batsmen</TabsTrigger>
+          <TabsTrigger value="all-rounder">All-rounders</TabsTrigger>
+          <TabsTrigger value="bowler">Bowlers</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="all">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {players.map(renderPlayerCard)}
+          </div>
+          {players.length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              No players found
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="wicket-keeper">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {playersByPosition['Wicket-keeper'].map(renderPlayerCard)}
+          </div>
+          {playersByPosition['Wicket-keeper'].length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              No wicket-keepers found
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="batsman">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {playersByPosition['Batsman'].map(renderPlayerCard)}
+          </div>
+          {playersByPosition['Batsman'].length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              No batsmen found
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="all-rounder">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {playersByPosition['All-rounder'].map(renderPlayerCard)}
+          </div>
+          {playersByPosition['All-rounder'].length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              No all-rounders found
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="bowler">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {playersByPosition['Bowler'].map(renderPlayerCard)}
+          </div>
+          {playersByPosition['Bowler'].length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              No bowlers found
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
