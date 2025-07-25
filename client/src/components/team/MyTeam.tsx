@@ -163,31 +163,39 @@ export function MyTeam() {
     return sum + points;
   }, 0);
 
-  // Check team composition requirements and organize by position - Updated for 2 all-rounders
+  // Check team composition requirements and organize by position - Updated for 11 players total
   const positionCounts = {
-    'Batsman': 0,
-    'Bowler': 0,
-    'All-rounder': 0,
-    'Wicket-keeper': 0
+    'Batsman': { main: 0, sub: 0 },
+    'Bowler': { main: 0, sub: 0 },
+    'All-rounder': { main: 0, sub: 0 },
+    'Wicket-keeper': { main: 0, sub: 0 }
   };
 
   const playersByPosition = {
-    'Wicket-keeper': [],
-    'Batsman': [],
-    'All-rounder': [],
-    'Bowler': []
+    'Wicket-keeper': { main: [], sub: [] },
+    'Batsman': { main: [], sub: [] },
+    'All-rounder': { main: [], sub: [] },
+    'Bowler': { main: [], sub: [] }
   };
 
-  mainTeam.forEach(player => {
-    positionCounts[player.position]++;
-    playersByPosition[player.position].push(player);
+  // Count and organize players by position and role
+  team.forEach(player => {
+    const role = player.is_substitute ? 'sub' : 'main';
+    positionCounts[player.position][role]++;
+    playersByPosition[player.position][role].push(player);
   });
 
-  // Updated team completion check for 2 all-rounders
-  const isTeamComplete = positionCounts['Batsman'] === 2 && 
-                        positionCounts['Bowler'] === 2 && 
-                        positionCounts['All-rounder'] === 2 && 
-                        positionCounts['Wicket-keeper'] === 1;
+  // Updated team completion check for 11 players total (7 main + 4 subs)
+  const isMainTeamComplete = positionCounts['Batsman'].main === 2 && 
+                            positionCounts['Bowler'].main === 2 && 
+                            positionCounts['All-rounder'].main === 2 && 
+                            positionCounts['Wicket-keeper'].main === 1;
+
+  const isFullTeamComplete = isMainTeamComplete &&
+                           positionCounts['Batsman'].sub === 1 &&
+                           positionCounts['Bowler'].sub === 1 &&
+                           positionCounts['All-rounder'].sub === 1 &&
+                           positionCounts['Wicket-keeper'].sub === 1;
 
   return (
     <div>
@@ -217,7 +225,7 @@ export function MyTeam() {
           <CardContent className="p-4">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Players</p>
-              <p className="text-2xl font-bold">{team.length}/7</p>
+              <p className="text-2xl font-bold">{team.length}/11</p>
             </div>
           </CardContent>
         </Card>
@@ -231,47 +239,61 @@ export function MyTeam() {
         </Card>
       </div>
 
-      {/* Team Composition Status - Updated for 2 all-rounders */}
+      {/* Team Composition Status - Updated for 11 players total */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Team Composition</CardTitle>
+          <CardTitle>Team Composition (Main Team + Substitutes)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Batsmen</p>
-              <p className={`text-lg font-bold ${positionCounts['Batsman'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
-                {positionCounts['Batsman']}/2
+              <p className={`text-lg font-bold ${positionCounts['Batsman'].main === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Batsman'].main}/2
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Sub: {positionCounts['Batsman'].sub}/1
               </p>
             </div>
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Bowlers</p>
-              <p className={`text-lg font-bold ${positionCounts['Bowler'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
-                {positionCounts['Bowler']}/2
+              <p className={`text-lg font-bold ${positionCounts['Bowler'].main === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Bowler'].main}/2
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Sub: {positionCounts['Bowler'].sub}/1
               </p>
             </div>
             <div className="text-center">
               <p className="text-sm text-muted-foreground">All-rounders</p>
-              <p className={`text-lg font-bold ${positionCounts['All-rounder'] === 2 ? 'text-green-600' : 'text-red-600'}`}>
-                {positionCounts['All-rounder']}/2
+              <p className={`text-lg font-bold ${positionCounts['All-rounder'].main === 2 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['All-rounder'].main}/2
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Sub: {positionCounts['All-rounder'].sub}/1
               </p>
             </div>
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Keeper</p>
-              <p className={`text-lg font-bold ${positionCounts['Wicket-keeper'] === 1 ? 'text-green-600' : 'text-red-600'}`}>
-                {positionCounts['Wicket-keeper']}/1
+              <p className={`text-lg font-bold ${positionCounts['Wicket-keeper'].main === 1 ? 'text-green-600' : 'text-red-600'}`}>
+                {positionCounts['Wicket-keeper'].main}/1
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Sub: {positionCounts['Wicket-keeper'].sub}/1
               </p>
             </div>
           </div>
-          {isTeamComplete ? (
-            <Badge variant="default" className="w-full justify-center">Team Complete</Badge>
+          {isFullTeamComplete ? (
+            <Badge variant="default" className="w-full justify-center">Complete Team (11 Players)</Badge>
+          ) : isMainTeamComplete ? (
+            <Badge variant="secondary" className="w-full justify-center">Main Team Complete (Need Substitutes)</Badge>
           ) : (
             <Badge variant="destructive" className="w-full justify-center">Incomplete Team</Badge>
           )}
         </CardContent>
       </Card>
 
-      {mainTeam.length === 0 ? (
+      {team.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
             <p className="text-muted-foreground">No players in your team yet.</p>
@@ -282,18 +304,21 @@ export function MyTeam() {
         <>
           {/* Main Team by Position */}
           <div className="space-y-6 mb-8">
+            <h3 className="text-xl font-semibold">Main Team (Playing XI)</h3>
             {Object.entries(playersByPosition).map(([position, players]) => (
               <Card key={position}>
                 <CardHeader>
                   <CardTitle className="flex justify-between items-center">
                     <span>{position}{position === 'Wicket-keeper' ? '' : 's'}</span>
-                    <Badge variant="secondary">{players.length} / {position === 'Batsman' || position === 'Bowler' || position === 'All-rounder' ? '2' : '1'}</Badge>
+                    <Badge variant="secondary">
+                      {players.main.length} / {position === 'Batsman' || position === 'Bowler' || position === 'All-rounder' ? '2' : '1'}
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {players.length > 0 ? (
+                  {players.main.length > 0 ? (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                      {players.map((player) => (
+                      {players.main.map((player) => (
                         <PlayerCard
                           key={player.player_id}
                           player={player}
@@ -304,24 +329,87 @@ export function MyTeam() {
                     </div>
                   ) : (
                     <div className="text-center py-8">
-                      <p className="text-muted-foreground">No {position.toLowerCase()}{position === 'Wicket-keeper' ? '' : 's'} in your team</p>
+                      <p className="text-muted-foreground">No {position.toLowerCase()}{position === 'Wicket-keeper' ? '' : 's'} in your main team</p>
                       <p className="text-sm text-muted-foreground mt-1">Go to Players page to buy {position === 'Wicket-keeper' ? 'a wicket-keeper' : position.toLowerCase() + 's'}</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
             ))}
+            
+            {/* Position-specific Substitutes */}
+            <h3 className="text-xl font-semibold">Substitute Players</h3>
+            {Object.entries(playersByPosition).map(([position, players]) => (
+              <Card key={`sub-${position}`}>
+                <CardHeader>
+                  <CardTitle className="flex justify-between items-center">
+                    <span>{position} Substitute</span>
+                    <Badge variant="outline">{players.sub.length}/1</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {players.sub.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        {players.sub.map((player) => (
+                          <div key={player.player_id} className="relative">
+                            <PlayerCard
+                              player={player}
+                              onSetCaptain={() => {}} // Subs can't be captains
+                              onSellPlayer={handleSellPlayer}
+                              showActions={false}
+                            />
+                            <Badge variant="outline" className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs">
+                              Sub
+                            </Badge>
+                            <Button 
+                              variant="destructive"
+                              size="sm"
+                              className="absolute top-0 right-0 w-6 h-6 p-0 text-xs"
+                              onClick={() => handleSellPlayer(player.player_id)}
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Substitution Controls */}
+                      {players.main.length > 0 && (
+                        <Card className="bg-muted/50">
+                          <CardContent className="p-4">
+                            <h4 className="font-semibold mb-3">Make Substitution</h4>
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Select a main team {position.toLowerCase()} to substitute:
+                            </p>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                              {players.main.map((mainPlayer) => (
+                                <Button
+                                  key={mainPlayer.player_id}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSubstitute(mainPlayer.player_id, players.sub[0].player_id)}
+                                  className="text-xs"
+                                >
+                                  Swap with {mainPlayer.name}
+                                  {mainPlayer.is_captain && ' (C)'}
+                                </Button>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">No {position.toLowerCase()} substitute</p>
+                      <p className="text-sm text-muted-foreground mt-1">Go to Players page to buy a substitute {position.toLowerCase()}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          
-          {/* Substitutes Bench */}
-          {substitutes.length > 0 && (
-            <SubstituteBench 
-              substitutes={substitutes}
-              mainTeam={mainTeam}
-              onSubstitute={handleSubstitute}
-              onSellPlayer={handleSellPlayer}
-            />
-          )}
         </>
       )}
     </div>

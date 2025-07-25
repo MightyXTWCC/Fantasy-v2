@@ -45,10 +45,18 @@ async function checkLockout(req: express.Request, res: express.Response, next: e
   }
 }
 
-// Market Management - Update prices based on ownership demand
+// Improved Market Management - Updated with new value calculation system
 async function updateMarketPrices() {
   try {
+    console.log('Starting market price update with new calculation system...');
+    
     const players = await db.selectFrom('players').selectAll().execute();
+    
+    // Calculate average current round points across all players
+    const totalCurrentPoints = players.reduce((sum, p) => sum + (p.current_round_points || 0), 0);
+    const averagePoints = players.length > 0 ? totalCurrentPoints / players.length : 0;
+    
+    console.log(`Average points this round: ${averagePoints}`);
     
     for (const player of players) {
       // Count how many users own this player
@@ -57,31 +65,73 @@ async function updateMarketPrices() {
         .where('player_id', '=', player.id)
         .executeTakeFirst();
       
-      const owners = ownershipCount?.count || 0;
+      const owners = Number(ownershipCount?.count || 0);
       
-      // Market demand multiplier (increases price if many people own the player)
-      let marketMultiplier = 1;
-      if (owners >= 5) marketMultiplier = 1.5; // 50% increase if 5+ owners
-      else if (owners >= 3) marketMultiplier = 1.3; // 30% increase if 3+ owners
-      else if (owners >= 2) marketMultiplier = 1.15; // 15% increase if 2+ owners
+      // Get total number of users for selection rate calculation
+      const totalUsers = await db.selectFrom('users')
+        .select(({ fn }) => [fn.count('id').as('count')])
+        .executeTakeFirst();
       
-      // Performance-based pricing
-      const totalAllTimePoints = player.total_points + player.current_round_points;
-      const performancePrice = Math.max(50000, 100000 + (totalAllTimePoints * 1000));
+      const totalUserCount = Number(totalUsers?.count || 1);
+      const selectionRate = totalUserCount > 0 ? (owners / totalUserCount) * 100 : 0;
       
-      // Combine market demand with performance
-      const newPrice = Math.floor(performancePrice * marketMultiplier);
+      // Apply new value calculation
+      const adjustedPlayer = adjustPlayerValue({
+        value: player.current_price,
+        points: player.current_round_points || 0,
+        averagePoints,
+        selectionRate
+      });
+      
+      const newPrice = Math.max(50000, adjustedPlayer.newValue); // Minimum price floor
       
       await db.updateTable('players')
         .set({ current_price: newPrice })
         .where('id', '=', player.id)
         .execute();
+      
+      if (adjustedPlayer.change !== 0) {
+        console.log(`${player.name}: $${player.current_price} → $${newPrice} (${adjustedPlayer.change > 0 ? '+' : ''}${adjustedPlayer.change})`);
+      }
     }
     
-    console.log('Market prices updated based on ownership and performance');
+    console.log('Market prices updated successfully');
   } catch (error) {
     console.error('Error updating market prices:', error);
   }
+}
+
+// New value adjustment function
+function adjustPlayerValue(player) {
+  const {
+    value,             // current value in dollars (e.g., 75000)
+    points,            // points scored this round
+    averagePoints,     // average points scored by all players this round
+    selectionRate      // percentage of teams that selected this player (e.g., 30)
+  } = player;
+
+  const K = 200; // scaling factor - how much each point above/below avg is worth
+  const ownershipBonus = 0.1; // extra value per % above/below ownership baseline
+  const ownershipBaseline = 20; // expected % selection
+
+  // Calculate point-based change
+  let delta = (points - averagePoints) * K;
+
+  // Popularity bonus (players selected by many get a boost)
+  delta += (selectionRate - ownershipBaseline) * ownershipBonus * 1000;
+
+  // Cap value change to 15% of current value
+  const maxChange = value * 0.15;
+  if (delta > maxChange) delta = maxChange;
+  if (delta < -maxChange) delta = -maxChange;
+
+  const newValue = Math.round(value + delta);
+
+  return {
+    ...player,
+    newValue,
+    change: newValue - value
+  };
 }
 
 // Calculate points based on stats with position-based bonuses, multipliers, and custom bonus rules
@@ -559,18 +609,37 @@ app.get('/api/players', async (req, res) => {
   }
 });
 
-// Create a new player (admin only)
+// Create a new player (admin only) - Updated with position-based default pricing
 app.post('/api/players', authenticateUser, requireAdmin, async (req, res) => {
   try {
     const { name, position, base_price } = req.body;
     console.log('Creating player:', { name, position, base_price });
     
+    // Set default prices based on position if not provided
+    let defaultPrice = base_price;
+    if (!base_price) {
+      switch (position) {
+        case 'Bowler':
+        case 'Batsman':
+          defaultPrice = 75000;
+          break;
+        case 'All-rounder':
+          defaultPrice = 100000;
+          break;
+        case 'Wicket-keeper':
+          defaultPrice = 65000;
+          break;
+        default:
+          defaultPrice = 100000;
+      }
+    }
+    
     const player = await db.insertInto('players')
       .values({
         name,
         position,
-        base_price: base_price || 100000,
-        current_price: base_price || 100000
+        base_price: defaultPrice,
+        current_price: defaultPrice
       })
       .returningAll()
       .executeTakeFirst();
@@ -682,31 +751,6 @@ app.delete('/api/players/:id', authenticateUser, requireAdmin, async (req, res) 
   } catch (error) {
     console.error('Error deleting player:', error);
     res.status(500).json({ error: 'Failed to delete player' });
-  }
-});
-
-// Delete all players (admin only) - Start fresh
-app.delete('/api/admin/players/all', authenticateUser, requireAdmin, async (req, res) => {
-  try {
-    console.log('Admin deleting all players');
-
-    // Delete all user teams
-    await db.deleteFrom('user_teams').execute();
-
-    // Delete all player stats
-    await db.deleteFrom('player_stats').execute();
-
-    // Delete all round multipliers
-    await db.deleteFrom('round_multipliers').execute();
-
-    // Delete all players
-    await db.deleteFrom('players').execute();
-
-    console.log('All players deleted successfully');
-    res.json({ success: true, message: 'All players deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting all players:', error);
-    res.status(500).json({ error: 'Failed to delete all players' });
   }
 });
 
@@ -1159,7 +1203,7 @@ app.get('/api/my-team', authenticateUser, async (req, res) => {
   }
 });
 
-// Buy player with position constraints and lockout check - Updated for 2 all-rounders, with market price update
+// Buy player with position constraints and lockout check - Updated for 11 players (7 main + 4 position-specific subs)
 app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1173,9 +1217,9 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
       .where('user_id', '=', userId)
       .execute();
     
-    // Check if user already has 7 players total (updated for 2 all-rounders)
-    if (currentTeam.length >= 7) {
-      res.status(400).json({ error: 'Team is full (maximum 7 players)' });
+    // Check if user already has 11 players total
+    if (currentTeam.length >= 11) {
+      res.status(400).json({ error: 'Team is full (maximum 11 players)' });
       return;
     }
     
@@ -1202,34 +1246,44 @@ app.post('/api/buy-player', authenticateUser, checkLockout, async (req, res) => 
       return;
     }
     
-    // Position constraints check for main team (not substitutes) - Updated for 2 all-rounders
-    if (!isSubstitute) {
-      const mainTeam = currentTeam.filter(p => !p.is_substitute);
-      const positionCounts = {
-        'Batsman': 0,
-        'Bowler': 0,
-        'All-rounder': 0,
-        'Wicket-keeper': 0
-      };
-      
-      mainTeam.forEach(p => {
-        positionCounts[p.position]++;
-      });
-      
-      // Check position limits for main team - Updated to require 2 all-rounders
-      if (player.position === 'Batsman' && positionCounts['Batsman'] >= 2) {
+    // Position constraints check - count by position and substitute status
+    const positionCounts = {
+      'Batsman': { main: 0, sub: 0 },
+      'Bowler': { main: 0, sub: 0 },
+      'All-rounder': { main: 0, sub: 0 },
+      'Wicket-keeper': { main: 0, sub: 0 }
+    };
+    
+    currentTeam.forEach(p => {
+      if (p.is_substitute) {
+        positionCounts[p.position].sub++;
+      } else {
+        positionCounts[p.position].main++;
+      }
+    });
+    
+    // Check position limits
+    if (isSubstitute) {
+      // Check substitute limits (1 per position)
+      if (positionCounts[player.position].sub >= 1) {
+        res.status(400).json({ error: `Already have maximum ${player.position.toLowerCase()} substitutes (1)` });
+        return;
+      }
+    } else {
+      // Check main team limits
+      if (player.position === 'Batsman' && positionCounts['Batsman'].main >= 2) {
         res.status(400).json({ error: 'Already have maximum batsmen (2)' });
         return;
       }
-      if (player.position === 'Bowler' && positionCounts['Bowler'] >= 2) {
+      if (player.position === 'Bowler' && positionCounts['Bowler'].main >= 2) {
         res.status(400).json({ error: 'Already have maximum bowlers (2)' });
         return;
       }
-      if (player.position === 'All-rounder' && positionCounts['All-rounder'] >= 2) {
+      if (player.position === 'All-rounder' && positionCounts['All-rounder'].main >= 2) {
         res.status(400).json({ error: 'Already have maximum all-rounders (2)' });
         return;
       }
-      if (player.position === 'Wicket-keeper' && positionCounts['Wicket-keeper'] >= 1) {
+      if (player.position === 'Wicket-keeper' && positionCounts['Wicket-keeper'].main >= 1) {
         res.status(400).json({ error: 'Already have maximum wicket-keepers (1)' });
         return;
       }
@@ -1427,7 +1481,7 @@ app.post('/api/substitute-player', authenticateUser, checkLockout, async (req, r
   }
 });
 
-// Get leaderboard (public) - Updated for 2 all-rounders
+// Get leaderboard (public) - Updated for new team structure
 app.get('/api/leaderboard', async (req, res) => {
   try {
     console.log('Fetching leaderboard');
